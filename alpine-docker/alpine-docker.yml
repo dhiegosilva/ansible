@@ -1,5 +1,5 @@
 ---
-- name: Setup Alpine Linux for Latest Stable Updates and Install Packages
+- name: Setup Alpine Linux for Docker and Automated Upgrades
   hosts: alpine
   become: true
 
@@ -23,17 +23,37 @@
     - name: Run apk update if repositories were modified
       ansible.builtin.command: apk update
       when: main_repo.changed or community_repo.changed
-      notify: upgrade_packages
 
-    - name: Install Docker, Docker Compose, and Cockpit
+    - name: Install Docker and Docker Compose
       ansible.builtin.apk:
         name:
           - docker
           - docker-compose
-          - cockpit
         update_cache: yes
         state: latest
 
-  handlers:
-    - name: upgrade_packages
-      ansible.builtin.command: apk upgrade --available
+    - name: Create a script to auto-upgrade and reboot if needed
+      ansible.builtin.copy:
+        dest: /usr/local/bin/auto_upgrade.sh
+        mode: '0755'
+        content: |
+          #!/bin/sh
+          # Update the package index
+          apk update
+          # Perform the upgrade
+          if apk upgrade --available | grep -q "Upgraded"; then
+            # If packages were upgraded, reboot
+            echo "System upgraded, rebooting..."
+            reboot
+          else
+            echo "No upgrades performed."
+          fi
+
+    - name: Schedule weekly cron job for auto-upgrade script
+      ansible.builtin.cron:
+        name: "Weekly auto-upgrade for Alpine Linux"
+        job: "/usr/local/bin/auto_upgrade.sh"
+        weekday: "0"  # Sunday
+        hour: "3"     # 3:00 AM
+        user: root
+        state: present
