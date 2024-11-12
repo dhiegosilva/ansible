@@ -1,0 +1,97 @@
+---
+- name: Setup Alpine Linux for Docker and Automated Upgrades
+  hosts: alpine
+  become: true
+
+  tasks:
+    - name: Update repository to use the latest stable Alpine packages
+      ansible.builtin.lineinfile:
+        path: /etc/apk/repositories
+        regexp: '^https://dl-cdn.alpinelinux.org/alpine/v[0-9\.]+/main$'
+        line: 'https://dl-cdn.alpinelinux.org/alpine/latest-stable/main'
+        state: present
+      register: main_repo
+
+    - name: Update community repository to use the latest stable Alpine packages
+      ansible.builtin.lineinfile:
+        path: /etc/apk/repositories
+        regexp: '^https://dl-cdn.alpinelinux.org/alpine/v[0-9\.]+/community$'
+        line: 'https://dl-cdn.alpinelinux.org/alpine/latest-stable/community'
+        state: present
+      register: community_repo
+
+    - name: Run apk update if repositories were modified
+      ansible.builtin.command: apk update
+      when: main_repo.changed or community_repo.changed
+
+    - name: Install Docker and Docker Compose
+      ansible.builtin.apk:
+        name:
+          - docker
+          - docker-compose
+        update_cache: yes
+        state: latest
+
+    - name: Start and enable Docker service
+      ansible.builtin.service:
+        name: docker
+        state: started
+        enabled: true
+
+    - name: Create Docker Compose file in /opt
+      ansible.builtin.copy:
+        dest: /opt/docker-compose.yml
+        mode: '0644'
+        content: |
+          version: '3'
+          services:
+            frontend:
+              image: ghcr.io/dhiegosilva/webreact-web-frontend:latest
+              ports:
+                - "3000:80"
+              restart: always
+
+            backend:
+              image: ghcr.io/dhiegosilva/webreact-web-backend:latest
+              ports:
+                - "3001:3001"         
+              restart: always
+
+            watchtower:
+              image: containrrr/watchtower
+              volumes:
+                - /var/run/docker.sock:/var/run/docker.sock
+              restart: always
+        owner: root
+        group: root
+
+    - name: Run Docker Compose
+      ansible.builtin.command:
+        cmd: "docker-compose -f /opt/docker-compose.yml up -d"
+        chdir: /opt
+
+    - name: Create a script to auto-upgrade and reboot if needed
+      ansible.builtin.copy:
+        dest: /usr/local/bin/auto_upgrade.sh
+        mode: '0755'
+        content: |
+          #!/bin/sh
+          # Update the package index
+          apk update
+          # Perform the upgrade
+          if apk upgrade --available | grep -q "Upgraded"; then
+            # If packages were upgraded, reboot
+            echo "System upgraded, rebooting..."
+            reboot
+          else
+            echo "No upgrades performed."
+          fi
+
+    - name: Schedule weekly cron job for auto-upgrade script
+      ansible.builtin.cron:
+        name: "Weekly auto-upgrade for Alpine Linux"
+        job: "/usr/local/bin/auto_upgrade.sh"
+        weekday: "0"  # Sunday
+        hour: "3"     # 3:00 AM
+        user: root
+        state: present
