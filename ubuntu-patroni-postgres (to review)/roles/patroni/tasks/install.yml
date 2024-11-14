@@ -1,0 +1,15 @@
+---
+- name: Update and install dependencies
+  apt:
+    update_cache: yes
+    name: "{{ item }}"
+    state: present
+  loop:
+    - postgresql
+    - postgresql-contrib
+    - python3-pip
+    - etcd
+
+- name: Install Patroni
+  pip:
+    name: patroni[etcd]

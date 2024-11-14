@@ -1,0 +1,12 @@
+---
+- name: Configure etcd
+  template:
+    src: etcd.conf.j2
+    dest: /etc/default/etcd
+  notify: restart etcd
+
+- name: Configure Patroni
+  template:
+    src: patroni.yml.j2
+    dest: /etc/patroni.yml
+  notify: restart patroni

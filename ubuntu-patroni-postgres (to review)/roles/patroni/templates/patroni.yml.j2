@@ -1,0 +1,52 @@
+scope: "{{ patroni_scope }}"
+namespace: "{{ patroni_namespace }}"
+name: "{{ ansible_hostname }}"
+
+restapi:
+  listen: "{{ ansible_default_ipv4.address }}:8008"
+  connect_address: "{{ ansible_default_ipv4.address }}:8008"
+
+etcd:
+  hosts: "192.168.0.222:2379,192.168.0.223:2379"
+
+bootstrap:
+  dcs:
+    ttl: 30
+    loop_wait: 10
+    retry_timeout: 10
+    maximum_lag_on_failover: 1048576
+    postgresql:
+      use_pg_rewind: true
+      parameters:
+        wal_level: replica
+        hot_standby: "on"
+        max_connections: 100
+        max_wal_senders: 5
+        wal_keep_segments: 8
+        archive_mode: "on"
+        archive_command: 'cp %p /var/lib/postgresql/data/archive/%f'
+  initdb:
+  - encoding: UTF8
+  - data-checksums
+
+postgresql:
+  listen: "{{ ansible_default_ipv4.address }}:5432"
+  connect_address: "{{ ansible_default_ipv4.address }}:5432"
+  data_dir: /var/lib/postgresql/data
+  bin_dir: /usr/lib/postgresql/12/bin
+  authentication:
+    replication:
+      username: replicator
+      password: "{{ replication_password }}"
+    superuser:
+      username: postgres
+      password: "{{ postgres_password }}"
+    rewind:
+      username: rewind_user
+      password: "{{ rewind_password }}"
+  parameters:
+    archive_mode: "on"
+    archive_command: 'test ! -f /var/lib/postgresql/data/archive/%f && cp %p /var/lib/postgresql/data/archive/%f'
+    wal_level: replica
+    hot_standby: "on"
+    max_wal_senders: 10

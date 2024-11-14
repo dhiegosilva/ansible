@@ -1,5 +1,5 @@
 ---
-- name: Setup Alpine Linux for Docker and Automated Upgrades
+- name: Setup Alpine Linux for Podman and Automated Upgrades
   hosts: alpine
   become: true
 
@@ -24,23 +24,30 @@
       ansible.builtin.command: apk update
       when: main_repo.changed or community_repo.changed
 
-    - name: Install Docker and Docker Compose
+    - name: Install dependencies for Podman and Podman Compose
       ansible.builtin.apk:
         name:
-          - docker
-          - docker-compose
+          - podman
+          - podman-compose
+          - fuse-overlayfs
+          - shadow  # for usermod if needed
         update_cache: yes
-        state: latest
+        state: present
 
-    - name: Enable Docker service to start on boot
-      ansible.builtin.service:
-        name: docker
-        enabled: true
-
-    - name: Start Docker service
-      ansible.builtin.service:
-        name: docker
+    - name: Enable and start Podman service
+      ansible.builtin.systemd:
+        name: podman
+        enabled: yes
         state: started
+
+    - name: Verify Podman installation
+      ansible.builtin.command: podman --version
+      register: podman_version
+      changed_when: false
+
+    - name: Display Podman version
+      ansible.builtin.debug:
+        msg: "Podman version: {{ podman_version.stdout }}"
 
     - name: Create a script to auto-upgrade and reboot if needed
       ansible.builtin.copy:

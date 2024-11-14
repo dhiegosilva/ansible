@@ -1,0 +1,82 @@
+services:
+  postgres-primary:
+    image: postgres:16
+    container_name: postgres-primary
+    environment:
+      POSTGRES_USER: dhiego
+      POSTGRES_PASSWORD: f4x4d8p6
+      POSTGRES_DB: metabase
+    volumes:
+      - ./primary_data:/var/lib/postgresql/data
+      - ./pg_hba.conf:/var/lib/postgresql/data/pg_hba.conf  # Mount custom pg_hba.conf
+    networks:
+      - pgnetwork
+
+  # Replica PostgreSQL instance
+  postgres-replica:
+    image: postgres:16
+    container_name: postgres-replica
+    environment:
+      POSTGRES_USER: dhiego
+      POSTGRES_PASSWORD: f4x4d8p6
+      POSTGRES_DB: metabase
+    volumes:
+      - ./replica_data:/var/lib/postgresql/data
+    networks:
+      - pgnetwork
+    depends_on:
+      - postgres-primary
+    command: >
+      sh -c "sleep 10 &&
+      pg_basebackup -h postgres-primary -D /var/lib/postgresql/data -U dhiego -Fp -Xs -P &&
+      postgres"
+
+  # Pgpool-II instance
+  pgpool:
+    image: bitnami/pgpool:4
+    container_name: pgpool
+    environment:
+      PGPOOL_BACKEND_NODES: "0:postgres-primary:5432,1:postgres-replica:5432"
+      PGPOOL_SR_CHECK_USER: "dhiego"
+      PGPOOL_SR_CHECK_PASSWORD: "f4x4d8p6"
+      PGPOOL_ENABLE_LOAD_BALANCING: "true"
+      PGPOOL_POSTGRES_USERNAME: "dhiego"
+      PGPOOL_POSTGRES_PASSWORD: "f4x4d8p6"
+    ports:
+      - "5433:5432"
+    networks:
+      - pgnetwork
+    depends_on:
+      - postgres-primary
+      - postgres-replica
+
+  # pgAdmin instance
+  pgadmin:
+    image: dpage/pgadmin4
+    container_name: pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@admin.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+    ports:
+      - "5050:80"
+    networks:
+      - pgnetwork
+    depends_on:
+      - postgres-primary
+      - postgres-replica
+
+  # Watchtower instance
+  watchtower:
+    image: containrrr/watchtower
+    container_name: watchtower
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      WATCHTOWER_CLEANUP: "true"
+      WATCHTOWER_SCHEDULE: "0 0 4 * * *"  # Optional: runs daily at 4am
+    networks:
+      - pgnetwork
+
+networks:
+  pgnetwork:
+    driver: bridge

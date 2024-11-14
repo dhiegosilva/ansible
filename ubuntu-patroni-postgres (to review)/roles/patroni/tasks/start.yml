@@ -1,0 +1,12 @@
+---
+- name: Enable and start etcd
+  systemd:
+    name: etcd
+    enabled: yes
+    state: started
+
+- name: Enable and start Patroni
+  systemd:
+    name: patroni
+    enabled: yes
+    state: started

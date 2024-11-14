@@ -1,0 +1,14 @@
+---
+- hosts: patroni_nodes
+  become: yes
+  vars:
+    patroni_scope: "postgres"
+    patroni_namespace: "/service/"
+    postgres_password: "postgres_password"
+    replication_password: "replicate_password"
+    rewind_password: "rewind_password"
+    postgres_user: "dhiego"
+    postgres_user_password: "f4x4d8p6"
+  roles:
+    - role: patroni
+    - role: postgres_user
