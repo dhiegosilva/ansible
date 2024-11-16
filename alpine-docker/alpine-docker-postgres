@@ -41,12 +41,21 @@
       ansible.builtin.service:
         name: docker
         state: started
-    
+
+    - name: Create persistent storage directory for pgAdmin
+      ansible.builtin.file:
+        path: /opt/pgadmin_data
+        state: directory
+        mode: '0775'
+        owner: 5050
+        group: 5050
+
     - name: Create docker-compose.yml in /opt
       ansible.builtin.copy:
         dest: /opt/docker-compose.yml
         mode: '0644'
         content: |
+          version: "3.9"
           services:
             postgres:
               image: postgres:17-alpine
@@ -60,6 +69,38 @@
                 - /opt/postgres_data:/var/lib/postgresql/data
               ports:
                 - "5432:5432"
+              healthcheck:
+                test: ["CMD-SHELL", "pg_isready -U dhiego"]
+                interval: 10s
+                timeout: 5s
+                retries: 5
+
+            pgbouncer:
+              image: edoburu/pgbouncer
+              container_name: pgbouncer
+              restart: unless-stopped
+              environment:
+                DATABASE_URL: postgres://dhiego:f4x4d8p6@postgres:5432/metabase
+              volumes:
+                - /opt/pgbouncer/pgbouncer.ini:/etc/pgbouncer/pgbouncer.ini:ro
+                - /opt/pgbouncer/userlist.txt:/etc/pgbouncer/userlist.txt:ro
+              ports:
+                - "6432:6432"
+              depends_on:
+                postgres:
+                  condition: service_healthy
+
+            pgadmin:
+              image: dpage/pgadmin4:latest
+              container_name: pgadmin
+              restart: unless-stopped
+              environment:
+                PGADMIN_DEFAULT_EMAIL: dhiego.silva@hotmail.com
+                PGADMIN_DEFAULT_PASSWORD: f4x4d8p6
+              ports:
+                - "8080:80"
+              volumes:
+                - /opt/pgadmin_data:/var/lib/pgadmin
 
             watchtower:
               image: containrrr/watchtower:latest
@@ -72,8 +113,41 @@
               restart: unless-stopped
               command: --interval 300
 
-    - name: Run docker-compose up -d
-      ansible.builtin.shell: docker-compose up -d
+    - name: Create PgBouncer configuration directory
+      ansible.builtin.file:
+        path: /opt/pgbouncer
+        state: directory
+        mode: '0755'
+
+    - name: Create PgBouncer configuration file
+      ansible.builtin.copy:
+        dest: /opt/pgbouncer/pgbouncer.ini
+        mode: '0644'
+        content: |
+          [databases]
+          metabase = host=postgres port=5432 dbname=metabase user=dhiego password=f4x4d8p6
+
+          [pgbouncer]
+          ignore_startup_parameters = extra_float_digits
+          listen_addr = 0.0.0.0
+          listen_port = 6432
+          auth_type = md5
+          auth_file = /etc/pgbouncer/userlist.txt
+          pool_mode = session
+          max_client_conn = 100
+          default_pool_size = 20
+          log_connections = 1
+          log_disconnections = 1
+          log_pooler_errors = 1
+
+    - name: Create PgBouncer userlist file
+      ansible.builtin.shell: |
+        echo '"dhiego" "md5$(echo -n f4x4d8p6dhiego | md5sum | awk '\''{print $1}'\'')"' > /opt/pgbouncer/userlist.txt
+      args:
+        creates: /opt/pgbouncer/userlist.txt
+
+    - name: Restart all Docker services
+      ansible.builtin.shell: docker-compose down && docker-compose up -d
       args:
         chdir: /opt
 
