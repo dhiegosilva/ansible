@@ -1,4 +1,4 @@
-template base
+Alpine template base
 
 apk add --no-cache openssh python3 && \
 sed -i '/^#*PermitRootLogin/s/^#*PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config && \
@@ -8,6 +8,10 @@ adduser -D dhiego && \
 echo "dhiego:f4x4d8p6" | chpasswd
 
 
+
 Ansible run command
+
+rm /root/.ssh/known_hosts
+source ~/ansible-env/bin/activate
 
 ANSIBLE_HOST_KEY_CHECKING=False ansible-playbook -i hosts.ini alpine-docker.yml
