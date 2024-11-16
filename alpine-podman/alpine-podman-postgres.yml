@@ -50,7 +50,44 @@
       ansible.builtin.debug:
         msg: "Podman version: {{ podman_version.stdout }}"
 
-    - name: Create a script to auto-upgrade and reboot if needed
+    - name: Create podman-compose.yml in /opt
+      ansible.builtin.copy:
+        dest: /opt/podman-compose.yml
+        mode: '0644'
+        content: |
+          services:
+            postgres:
+              image: postgres:16
+              container_name: postgres
+              environment:
+                POSTGRES_DB: metabase
+                POSTGRES_USER: dhiego
+                POSTGRES_PASSWORD: f4x4d8p6
+              volumes:
+                - /opt/postgres_data:/var/lib/postgresql/data
+              ports:
+                - "5432:5432"
+
+            watchtower:
+              image: containrrr/watchtower:latest
+              container_name: watchtower
+              environment:
+                - WATCHTOWER_CLEANUP=true
+                - WATCHTOWER_LABEL_ENABLE=true
+              volumes:
+                - /var/run/docker.sock:/var/run/docker.sock
+              restart: unless-stopped
+              command: --interval 300
+
+    - name: Ensure /opt folder ownership and permissions
+      ansible.builtin.file:
+        path: /opt
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+
+    - name: Create a script to auto-upgrade, reboot if needed, and start containers
       ansible.builtin.copy:
         dest: /usr/local/bin/auto_upgrade.sh
         mode: '0755'
@@ -66,10 +103,13 @@
           else
             echo "No upgrades performed."
           fi
+          # Start Podman containers
+          cd /opt
+          podman-compose up -d
 
     - name: Schedule weekly cron job for auto-upgrade script
       ansible.builtin.cron:
-        name: "Weekly auto-upgrade for Alpine Linux"
+        name: "Weekly auto-upgrade for Alpine Linux and start containers"
         job: "/usr/local/bin/auto_upgrade.sh"
         weekday: "0"  # Sunday
         hour: "3"     # 3:00 AM

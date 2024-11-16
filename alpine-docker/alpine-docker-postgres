@@ -1,5 +1,5 @@
 ---
-- name: Setup Alpine Linux for Podman and Automated Upgrades
+- name: Setup Alpine Linux for Docker and Automated Upgrades
   hosts: alpine
   become: true
 
@@ -24,31 +24,57 @@
       ansible.builtin.command: apk update
       when: main_repo.changed or community_repo.changed
 
-    - name: Install dependencies for Podman and Podman Compose
+    - name: Install Docker and Docker Compose
       ansible.builtin.apk:
         name:
-          - podman
-          - podman-compose
-          - fuse-overlayfs
-          - shadow  # for usermod if needed
+          - docker
+          - docker-compose
         update_cache: yes
-        state: present
+        state: latest
 
-    - name: Enable and start Podman service
-      ansible.builtin.shell: |
-        rc-update add podman default
-        rc-service podman start
+    - name: Enable Docker service to start on boot
+      ansible.builtin.service:
+        name: docker
+        enabled: true
+
+    - name: Start Docker service
+      ansible.builtin.service:
+        name: docker
+        state: started
+    
+    - name: Create docker-compose.yml in /opt
+      ansible.builtin.copy:
+        dest: /opt/docker-compose.yml
+        mode: '0644'
+        content: |
+          services:
+            postgres:
+              image: postgres:16
+              container_name: postgres
+              environment:
+                POSTGRES_DB: metabase
+                POSTGRES_USER: dhiego
+                POSTGRES_PASSWORD: f4x4d8p6
+              volumes:
+                - /opt/postgres_data:/var/lib/postgresql/data
+              ports:
+                - "5432:5432"
+
+            watchtower:
+              image: containrrr/watchtower:latest
+              container_name: watchtower
+              environment:
+                - WATCHTOWER_CLEANUP=true
+                - WATCHTOWER_LABEL_ENABLE=true
+              volumes:
+                - /var/run/docker.sock:/var/run/docker.sock
+              restart: unless-stopped
+              command: --interval 300
+
+    - name: Run docker-compose up -d
+      ansible.builtin.shell: docker-compose up -d
       args:
-        executable: /bin/sh
-
-    - name: Verify Podman installation
-      ansible.builtin.command: podman --version
-      register: podman_version
-      changed_when: false
-
-    - name: Display Podman version
-      ansible.builtin.debug:
-        msg: "Podman version: {{ podman_version.stdout }}"
+        chdir: /opt
 
     - name: Create a script to auto-upgrade and reboot if needed
       ansible.builtin.copy:
