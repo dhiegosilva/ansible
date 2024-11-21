@@ -43,9 +43,9 @@ pipeline {
                     def kickstartContent = '''
                         install
                         lang en_US.UTF-8
-                        keyboard de
-                        timezone Germany/Berlin
-                        rootpw --plaintext f4x4d8p6
+                        keyboard us
+                        timezone UTC
+                        rootpw --plaintext myrootpassword
                         bootloader --location=mbr
                         clearpart --all --initlabel
                         autopart
@@ -67,20 +67,23 @@ pipeline {
         stage('Update Boot Configurations') {
             steps {
                 sh '''
+                #!/bin/bash
                 # Update boot options to use the custom kickstart file
-                sed -i 's|append|append inst.ks=cdrom:/ks.cfg|' ${WORKSPACE_DIR}/custom_iso_contents/isolinux/isolinux.cfg
+                sed -i 's|append|append initrd=initrd.img inst.ks=cdrom:/ks.cfg inst.stage2=cdrom:/BaseOS quiet|' ${WORKSPACE_DIR}/custom_iso_contents/isolinux/isolinux.cfg
                 '''
             }
         }
         stage('Create Custom ISO') {
             steps {
                 sh '''
+                #!/bin/bash
                 mkisofs -o ${WORKSPACE_DIR}/${CUSTOM_ISO_NAME} \
                 -b isolinux/isolinux.bin \
                 -c isolinux/boot.cat \
                 -no-emul-boot -boot-load-size 4 -boot-info-table \
+                -eltorito-alt-boot -e images/efiboot.img -no-emul-boot \
                 -V "CUSTOM_ROCKY_LINUX" \
-                -J -R -v \
+                -J -r -v \
                 ${WORKSPACE_DIR}/custom_iso_contents
                 '''
             }
