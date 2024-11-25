@@ -42,10 +42,10 @@ pipeline {
                 script {
                     def kickstartContent = '''
                         install
-                        lang en_US.UTF-8
-                        keyboard us
-                        timezone UTC
-                        rootpw --plaintext myrootpassword
+                        lang de_DE.UTF-8
+                        keyboard de
+                        timezone Europe/Berlin
+                        rootpw --plaintext f4x4d8p6
                         bootloader --location=mbr
                         clearpart --all --initlabel
                         autopart
@@ -68,8 +68,12 @@ pipeline {
             steps {
                 sh '''
                 #!/bin/bash
-                # Update boot options to use the custom kickstart file
-                sed -i 's|append|append initrd=initrd.img inst.ks=cdrom:/ks.cfg inst.stage2=cdrom:/BaseOS quiet|' ${WORKSPACE_DIR}/custom_iso_contents/isolinux/isolinux.cfg
+                # Update boot options to use the custom kickstart file and remove boot menu timeout
+                sed -i 's/timeout.*/timeout 0/' ${WORKSPACE_DIR}/custom_iso_contents/isolinux/isolinux.cfg
+                sed -i 's|append initrd=initrd.img.*|append initrd=initrd.img inst.ks=cdrom:/ks.cfg inst.stage2=cdrom:/BaseOS console=ttyS0,115200n8|' ${WORKSPACE_DIR}/custom_iso_contents/isolinux/isolinux.cfg
+                # Set the linux label as the default boot entry instead of the check label
+                sed -i 's/menu default//' ${WORKSPACE_DIR}/custom_iso_contents/isolinux/isolinux.cfg
+                sed -i '/label linux/ a menu default' ${WORKSPACE_DIR}/custom_iso_contents/isolinux/isolinux.cfg
                 '''
             }
         }
