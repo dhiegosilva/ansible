@@ -1,3 +1,6 @@
+Rockylinux base template
+dnf upgrade -y && dnf install -y python3 nano
+
 Alpine template base
 
 apk add --no-cache openssh python3 nano && \

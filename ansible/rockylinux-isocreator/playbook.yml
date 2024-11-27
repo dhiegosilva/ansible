@@ -1,0 +1,41 @@
+---
+- name: Configure RockyLinux 8 System
+  hosts: all
+  become: yes
+
+  tasks:
+    - name: Upgrade all packages to the latest version
+      yum:
+        name: "*"
+        state: latest
+
+    - name: Install packages for automatic upgrade
+      yum:
+        name:
+          - dnf-automatic
+        state: present
+
+    - name: Enable and start dnf-automatic timer for automatic upgrades
+      systemd:
+        name: dnf-automatic.timer
+        enabled: yes
+        state: started
+
+    - name: Install and enable cockpit
+      yum:
+        name: cockpit
+        state: present
+
+    - name: Enable and start cockpit service
+      systemd:
+        name: cockpit
+        enabled: yes
+        state: started
+
+    - name: Install additional packages (nano, genisoimage, isomd5sum)
+      yum:
+        name:
+          - nano
+          - genisoimage
+          - isomd5sum
+        state: present
