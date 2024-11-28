@@ -1,5 +1,11 @@
 Rockylinux base template
-dnf upgrade -y && dnf install -y python3 nano
+
+dnf upgrade -y && dnf install -y python3 nano && \ 
+dnf install -y openssh-server && \
+systemctl enable sshd && \
+sed -i '/^#*PermitRootLogin/s/^#*PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config && \
+reboot
+
 
 Alpine template base
 
@@ -9,7 +15,6 @@ rc-update add sshd && \
 service sshd start && \
 adduser -D dhiego && \
 echo "dhiego:f4x4d8p6" | chpasswd
-
 
 
 Ansible run command

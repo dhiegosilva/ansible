@@ -21,17 +21,6 @@
         enabled: yes
         state: started
 
-    - name: Install and enable cockpit
-      yum:
-        name: cockpit
-        state: present
-
-    - name: Enable and start cockpit service
-      systemd:
-        name: cockpit
-        enabled: yes
-        state: started
-
     - name: Install additional packages (nano, genisoimage, isomd5sum)
       yum:
         name:
@@ -39,3 +28,16 @@
           - genisoimage
           - isomd5sum
         state: present
+
+    - name: Set root password
+      user:
+        name: root
+        password: "{{ 'f4x4d8p6' | password_hash('sha512') }}"
+        state: present
+
+    - name: Create administrative user dhiego
+      user:
+        name: dhiego
+        password: "{{ 'f4x4d8p6' | password_hash('sha512') }}"
+        state: present
+        groups: wheel
