@@ -1,0 +1,27 @@
+rockylinux
+
+isomaker
+
+##(ansible)
+dnf install -y genisoimage isomd5sum syslinux
+##
+
+xorriso -osirrox on -indev Rocky-8.10-x86_64-minimal.iso -extract / /root/custom_iso/ && \
+cp ks.cfg /root/custom_iso/
+
+nano ~/custom_iso/isolinux/isolinux.cfg
+
+#generate ISO
+cd /root/custom_iso
+mkisofs -o /root/RockyLinux-8-custom.iso \
+        -b /root/custom_iso/isolinux/isolinux.bin \
+        -c /root/custom_iso/isolinux/boot.cat \
+        -no-emul-boot \
+        -boot-load-size 4 \
+        -boot-info-table \
+        -R -J -v -T -V "RockyLinux8" \
+        /root/custom_iso
+
+
+#make it bootable
+isohybrid /root/RockyLinux-8-custom.iso

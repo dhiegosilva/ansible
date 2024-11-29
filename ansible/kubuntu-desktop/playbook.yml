@@ -1,0 +1,84 @@
+- name: Configure Kubuntu 24.10 Environment
+  hosts: all
+  become: yes
+  tasks:
+
+    - name: Set IP address, gateway, and DNS settings
+      ansible.builtin.copy:
+        content: |
+          network:
+            version: 2
+            ethernets:
+              enp0s3:
+                dhcp4: no
+                addresses: [192.168.0.100/24]
+                gateway4: 192.168.0.1
+                nameservers:
+                  addresses: [192.168.0.33]
+        dest: /etc/netplan/01-netcfg.yaml
+      notify: Apply network changes
+
+    - name: Remove all snap and its packages
+      ansible.builtin.command: "snap remove --purge $(snap list | awk '!/Name/ {print $1}')"
+      ignore_errors: yes
+      register: snap_remove_result
+
+    - name: Remove snap completely from the system
+      ansible.builtin.apt:
+        name: snapd
+        state: absent
+      when: snap_remove_result is succeeded
+
+    - name: Upgrade all packages
+      ansible.builtin.apt:
+        update_cache: yes
+        upgrade: dist
+
+    - name: Install flatpak
+      ansible.builtin.apt:
+        name: flatpak
+        state: present
+
+    - name: Install flatpak repository (Flathub)
+      ansible.builtin.command: "flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo"
+      args:
+        creates: /var/lib/flatpak/repo/flathub
+
+    - name: Install Brave Browser via Flatpak
+      ansible.builtin.command: "flatpak install -y flathub com.brave.Browser"
+      args:
+        creates: /var/lib/flatpak/app/com.brave.Browser
+
+    - name: Install PeaZip via Flatpak
+      ansible.builtin.command: "flatpak install -y flathub io.github.peazip.PeaZip"
+      args:
+        creates: /var/lib/flatpak/app/io.github.peazip.PeaZip
+
+    - name: Install Flatseal via Flatpak
+      ansible.builtin.command: "flatpak install -y flathub com.github.tchx84.Flatseal"
+      args:
+        creates: /var/lib/flatpak/app/com.github.tchx84.Flatseal
+
+    - name: Install Eye of GNOME via Flatpak
+      ansible.builtin.command: "flatpak install -y flathub org.gnome.Eog"
+      args:
+        creates: /var/lib/flatpak/app/org.gnome.Eog
+
+    - name: Install VLC via Flatpak
+      ansible.builtin.command: "flatpak install -y flathub org.videolan.VLC"
+      args:
+        creates: /var/lib/flatpak/app/org.videolan.VLC
+
+    - name: Install Meld via Flatpak
+      ansible.builtin.command: "flatpak install -y flathub org.gnome.meld"
+      args:
+        creates: /var/lib/flatpak/app/org.gnome.meld
+
+    - name: Install DBeaver Community via Flatpak
+      ansible.builtin.command: "flatpak install -y flathub io.dbeaver.DBeaverCommunity"
+      args:
+        creates: /var/lib/flatpak/app/io.dbeaver.DBeaverCommunity
+
+  handlers:
+    - name: Apply network changes
+      ansible.builtin.command: "netplan apply"
