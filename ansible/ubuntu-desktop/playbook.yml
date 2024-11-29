@@ -1,4 +1,4 @@
-- name: Configure Kubuntu 24.10 Environment
+- name: Configure Ubuntu 24.10 Environment
   hosts: all
   become: yes
   tasks:
@@ -18,16 +18,33 @@
         dest: /etc/netplan/01-netcfg.yaml
       notify: Apply network changes
 
-    - name: Remove all snap and its packages
-      ansible.builtin.command: "snap remove --purge $(snap list | awk '!/Name/ {print $1}')"
+    - name: Stop snapd service to enable removal of core snaps
+      ansible.builtin.systemd:
+        name: snapd
+        state: stopped
+        enabled: no
+
+    - name: Remove all non-core snap packages
+      ansible.builtin.shell: |
+        for snap in $(snap list | grep -v 'Name\|core\|snapd' | awk '{print $1}'); do
+          snap remove --purge "$snap" || true
+        done
       ignore_errors: yes
-      register: snap_remove_result
+      register: snap_remove_noncore_result
+
+    - name: Remove core snap packages
+      ansible.builtin.shell: |
+        snap remove --purge snapd-desktop-integration || true
+        snap remove --purge snap-store || true
+        snap remove --purge core22 || true
+      ignore_errors: yes
+      when: snap_remove_noncore_result is succeeded
 
     - name: Remove snap completely from the system
       ansible.builtin.apt:
         name: snapd
         state: absent
-      when: snap_remove_result is succeeded
+      when: snap_remove_noncore_result is succeeded
 
     - name: Upgrade all packages
       ansible.builtin.apt:
@@ -58,11 +75,6 @@
       ansible.builtin.command: "flatpak install -y flathub com.github.tchx84.Flatseal"
       args:
         creates: /var/lib/flatpak/app/com.github.tchx84.Flatseal
-
-    - name: Install Eye of GNOME via Flatpak
-      ansible.builtin.command: "flatpak install -y flathub org.gnome.Eog"
-      args:
-        creates: /var/lib/flatpak/app/org.gnome.Eog
 
     - name: Install VLC via Flatpak
       ansible.builtin.command: "flatpak install -y flathub org.videolan.VLC"

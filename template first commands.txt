@@ -8,7 +8,7 @@ sed -i 's/^deb/#deb/' /etc/apt/sources.list.d/pve-enterprise.list /etc/apt/sourc
 
 Rockylinux base for ansible
 
-dnf upgrade -y && dnf install -y python3 nano && \ 
+dnf upgrade -y && dnf install -y python3 nano && \
 dnf install -y openssh-server && \
 systemctl enable sshd && \
 sed -i '/^#*PermitRootLogin/s/^#*PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config && \
@@ -33,4 +33,5 @@ source ~/ansible-env/bin/activate
 ANSIBLE_HOST_KEY_CHECKING=False ansible-playbook -i hosts.ini alpine-docker.yml
 
 
-
+Ubuntu ()
+sudo apt update && sudo apt install -y python3 curl && sudo sed -i '/^#*PermitRootLogin/s/^#*PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config && sudo systemctl restart ssh
