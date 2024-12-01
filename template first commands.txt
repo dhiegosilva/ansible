@@ -6,7 +6,7 @@ sed -i 's/^deb/#deb/' /etc/apt/sources.list.d/pve-enterprise.list /etc/apt/sourc
 (echo "0 5 * * 1 apt-get update && apt-get dist-upgrade -y && apt-get autoremove -y && apt-get autoclean -y && if [ -f /var/run/reboot-required ]; then reboot; fi >> /var/log/proxmox-autoupdate.log 2>&1") | crontab -
 
 
-Rockylinux base for ansible
+Rockylinux (base for ansible)
 
 dnf upgrade -y && dnf install -y python3 nano && \
 dnf install -y openssh-server && \
@@ -15,7 +15,7 @@ sed -i '/^#*PermitRootLogin/s/^#*PermitRootLogin.*/PermitRootLogin yes/' /etc/ss
 reboot
 
 
-Alpine template base
+Alpine (template base for ansible)
 
 apk add --no-cache openssh python3 nano && \
 sed -i '/^#*PermitRootLogin/s/^#*PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config && \
@@ -29,9 +29,25 @@ Ansible run command
 
 rm /root/.ssh/known_hosts
 source ~/ansible-env/bin/activate
+ansible-playbook -i inventory.ini playbook.yml
 
-ANSIBLE_HOST_KEY_CHECKING=False ansible-playbook -i hosts.ini alpine-docker.yml
 
-
-Ubuntu ()
+Ubuntu desktop (to run ansible)
 sudo apt update && sudo apt install -y python3 curl && sudo sed -i '/^#*PermitRootLogin/s/^#*PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config && sudo systemctl restart ssh
+
+
+Ubuntu Server (base for ansible)
+update installer enable (only online insallation)
+language
+
+Ubuntu server minimized
+install openssh server
+allow openssh server to login using root
+install microk8s
+entire disk (default)
+lvm (default)
+Your Name 'dhiego'
+Your Server Name 'master1'
+Pick a username 'dhiego'
+Choose a password 'f4x4d8p6'
+set root password 'f4x4d8p6'
