@@ -1,0 +1,7 @@
+Ansible run command
+
+rm /root/.ssh/known_hosts
+source ~/ansible-env/bin/activate
+ansible-playbook -i inventory.ini playbook.yml
+
+

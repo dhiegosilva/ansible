@@ -1,0 +1,7 @@
+Rockylinux (base for ansible)
+
+dnf upgrade -y && dnf install -y python3 nano && \
+dnf install -y openssh-server && \
+systemctl enable sshd && \
+sed -i '/^#*PermitRootLogin/s/^#*PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config && \
+reboot

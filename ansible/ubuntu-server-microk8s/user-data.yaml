@@ -1,0 +1,38 @@
+#cloud-config
+autoinstall:
+  version: 1
+  identity:
+    hostname: master1
+    username: dhiego
+    password: "$6$Tg/rWrPf$C.cNbdqduo7XXnLD9ujnKHw05vix0OVJuLEEd1J10j/AolPSWGRGSqxW3VG6l6zuwFssRB7E0bsbTuP6VbRiA/" # Recommend using a securely hashed password.
+  ssh:
+    install-server: true
+    allow-root: true  # Allow root login for SSH
+  storage:
+    layout:
+      name: lvm  # Use LVM for disk layout
+  packages:
+    - openssh-server
+    - qemu-guest-agent  # Install QEMU guest agent
+  early-commands:
+    # Allow root SSH login and enable password authentication
+    - "echo 'PermitRootLogin yes' >> /etc/ssh/sshd_config"
+    - "echo 'PasswordAuthentication yes' >> /etc/ssh/sshd_config"
+  late-commands:
+    # Set root password for SSH login
+    - "echo root:f4x4d8p6 | chpasswd"
+    # Install MicroK8s with the '--classic' parameter
+    - "snap install microk8s --classic"
+    # Add user dhiego to microk8s and sudo groups
+    - "usermod -aG microk8s,sudo dhiego"
+    # Create .kube directory for dhiego and copy the MicroK8s kubeconfig to it
+    - "mkdir -p /home/dhiego/.kube"
+    - "cp /var/snap/microk8s/current/credentials/client.config /home/dhiego/.kube/config"
+    - "chown -f -R dhiego:dhiego /home/dhiego/.kube"
+    # Enable and start QEMU guest agent service
+    - "systemctl enable qemu-guest-agent"
+    - "systemctl start qemu-guest-agent"
+    # Restart the SSH service to apply the configuration changes
+    - "systemctl restart ssh"
+  user-data:
+    disable_root: false  # Root user is allowed locally and remotely via SSH

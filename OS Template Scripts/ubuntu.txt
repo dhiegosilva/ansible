@@ -1,0 +1,22 @@
+Ubuntu desktop (to run ansible)
+sudo apt update && sudo apt install -y python3 curl && sudo sed -i '/^#*PermitRootLogin/s/^#*PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config && sudo systemctl restart ssh
+
+
+Ubuntu Server (base for ansible)
+update installer enable (only online insallation)
+language
+
+Ubuntu server minimized
+https://cloud-images.ubuntu.com/releases/24.04/release/ubuntu-24.04-server-cloudimg-amd64.img
+
+
+install openssh server
+allow openssh server to login using root
+install microk8s
+entire disk (default)
+lvm (default)
+Your Name 'dhiego'
+Your Server Name 'master1'
+Pick a username 'dhiego'
+Choose a password 'f4x4d8p6'
+set root password 'f4x4d8p6'

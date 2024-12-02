@@ -1,0 +1,75 @@
+---
+- name: Create VMs on 3 nodes
+  hosts: nodes
+  become: yes
+  tasks:
+    - name: Install virtualization packages
+      apt:
+        name:
+          - qemu-kvm
+          - libvirt-daemon-system
+          - libvirt-clients
+          - virtinst
+          - ovmf
+        state: present
+        update_cache: yes
+
+    - name: Ensure libvirtd is running and enabled
+      service:
+        name: libvirtd
+        state: started
+        enabled: yes
+
+    - name: Create VM disk image
+      command: >
+        qemu-img create -f qcow2 /var/lib/libvirt/images/{{ vm_name }}.qcow2 {{ disk_size }}
+      vars:
+        vm_name: "{{ inventory_hostname }}_vm"
+        disk_size: "20G"
+
+    - name: Create virtual machine
+      command: >
+        virt-install --name {{ vm_name }} \
+                    --ram {{ ram_size }} \
+                    --vcpus {{ vcpu_count }} \
+                    --disk path=/var/lib/libvirt/images/{{ vm_name }}.qcow2,format=qcow2,bus=virtio,cache=none,discard=unmap \
+                    --os-type linux \
+                    --os-variant ubuntu22.04 \
+                    --network bridge=virbr0,model=virtio \
+                    --graphics none \
+                    --console pty,target_type=serial \
+                    --location '{{ iso_location }}' \
+                    --extra-args 'console=ttyS0,115200n8 serial' \
+                    --machine q35 \
+                    --cpu host \
+                    --boot uefi \
+                    --qemu-agent
+      vars:
+        vm_name: "{{ inventory_hostname }}_vm"
+        ram_size: 2048
+        vcpu_count: 2
+        iso_location: "/var/lib/libvirt/boot/ubuntu-24.04-live-server-amd64.iso"
+
+    - name: Wait for VM to be accessible via SSH
+      wait_for:
+        host: "{{ vm_ip }}"
+        port: 22
+        delay: 10
+        timeout: 300
+      vars:
+        vm_ip: "192.168.122.10"  # Replace with the actual IP you plan to assign
+
+- name: Define inventory for nodes
+  hosts: localhost
+  tasks:
+    - name: Add nodes to inventory
+      add_host:
+        name: "{{ item }}"
+        ansible_ssh_host: "{{ item }}"
+      with_items:
+        - 192.168.0.99
+        - 192.168.0.98
+        - 192.168.0.97
+      vars:
+        ansible_user: "root"  # Replace with actual SSH username
+        ansible_ssh_pass: "f4x4d8p6"

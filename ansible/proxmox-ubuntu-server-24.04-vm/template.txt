@@ -1,0 +1,20 @@
+# Create the VM
+qm create 8000 --memory 2048 --name ubuntu-cloud --net0 virtio,bridge=vmbr0 --machine q35 --bios ovmf
+
+# Import the disk to local-lvm
+qm importdisk 8000 /var/lib/vz/template/iso/ubuntu-24.04-server-cloudimg-amd64.img local-lvm
+
+# Set the VirtIO block device with discard and IO thread
+qm set 8000 --virtio0 local-lvm:vm-8000-disk-0,discard=on,iothread=1
+
+# Set the cloud-init drive
+qm set 8000 --ide2 local:cloudinit
+
+# Set boot options to boot from VirtIO disk
+qm set 8000 --boot c --bootdisk virtio0
+
+# Set serial interface and VGA as serial
+qm set 8000 --serial0 socket --vga serial0
+
+# Set EFI disk
+qm set 8000 --efidisk0 local-lvm:1

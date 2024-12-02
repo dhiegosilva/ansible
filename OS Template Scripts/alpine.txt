@@ -1,0 +1,8 @@
+Alpine (template base for ansible)
+
+apk add --no-cache openssh python3 nano && \
+sed -i '/^#*PermitRootLogin/s/^#*PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config && \
+rc-update add sshd && \
+service sshd start && \
+adduser -D dhiego && \
+echo "dhiego:f4x4d8p6" | chpasswd
