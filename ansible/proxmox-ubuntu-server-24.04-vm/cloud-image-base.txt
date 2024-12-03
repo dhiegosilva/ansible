@@ -1,8 +1,13 @@
 # Create the VM with initial settings
-qm create 9000 --memory 2048 --name ubuntu-cloud --net0 virtio,bridge=vmbr0 --machine q35 --bios ovmf
+qm create 9000 --memory 2048 --name ubuntu-cloud --net0 virtio,bridge=vmbr0 --cores 4 --machine q35 --bios ovmf
 
 # Import the disk image for the VM (assumes the image is already downloaded to this location)
 qm importdisk 9000 /var/lib/vz/template/iso/ubuntu-24.04-server-cloudimg-amd64.img local-lvm
+
+#linux
+qm set 9000 --ostype l26
+
+qm set 9000 --agent enabled=1
 
 # Set up the VM with proper disk and SCSI configurations
 qm set 9000 --scsihw virtio-scsi-single
@@ -29,6 +34,7 @@ echo -e 'ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQCzz/yPx8rC1KsnXm+PkEogIZfrjRWiQvP
 qm set 9000 --ipconfig0 ip=192.168.0.55/24,gw=192.168.0.1
 
 
+
 #####################################################################################
 
 
@@ -43,7 +49,10 @@ qm cloudinit update 9000
 qm start 9000
 
 
+#one liner
+qm create 9000 --memory 2048 --name ubuntu-cloud --net0 virtio,bridge=vmbr0 --cores 4 --machine q35 --bios ovmf && qm importdisk 9000 /var/lib/vz/template/iso/ubuntu-24.04-server-cloudimg-amd64.img local-lvm && qm set 9000 --ostype l26 --agent enabled=1 --scsihw virtio-scsi-single --scsi0 local-lvm:vm-9000-disk-0,discard=on,iothread=1 --ide2 local-lvm:cloudinit --boot c --bootdisk scsi0 --efidisk0 local-lvm:1 --ciupgrade 1 --ciuser dhiego --cipassword '!Ds21032962' && echo -e 'ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQCzz/yPx8rC1KsnXm+PkEogIZfrjRWiQvPk/ngD4Ol723de8SDhV8PCo/AloZYp3SiYz3aIoKKgr6C4iUcxxsKTWCTdPLQLISuOoenYDoxgXw74gg6Ulsc5FBdyojOANbL9UVObNiBMhQvlXj4iomDB6Mbgi0fU6h1JoVMIR2/DD0mff/1o0T+ycIbEx/tK6ScY+jh3tMBxU/rnCESF81/WLeOArp9UkhmqpQOS26VKLn4W8ml0HQZ4oMublztiguMZ0p2hMfiU3IbfXGz+JrGyeKi4gV6D8lal9EFRN7B7mTr3fzMkw+gb3MTleckAP1ITyfKlEU26n0dcVyywHWaLKVn4Zu/Xa6Tt7c4NE8LnuWSkNTie8uhRW+rVbQ8kk72XiW0GAxoO1iVGzljmIh4Lw3DDLhp9wp5ACI/4NJMlOJmLPfuyMh5F0Er891a21D+yKskgEml8tPB37JchGPW7IRxYYQS6g79PWE3n2aMAQxGPzeUgVRaGziCJIMrCq5mgzbN255vB5NzsBAwqRbpQqcXql+N0FVVyMP4pNYF2sh8Gii1wn2MrB7cye22Y3sZvUumUE0f26F55dUJZ116vThdh9mbsMnWZlk3+bTTUSSLfrDObc0aS6/FDxsjov01vWxzCm8K7Qd/QlQNPpJlhxo+keuA7kcrQLjtqPPeS+Q== dhiego.silva@hotmail.com\nssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQCbc8uz/GZuGU1a8vGrocddM9jDjzODH2nDBsZt3ZDWWeicdKWFj0OP+fpzFAn2+qYXpBdRrEPq3SX/SncZUJCgYtQOBqPRr9nr/eaOPP4w8OCnQqmgJnksFyEK4nzPrJEFjUmmULLBUtA41iS9hhnuc8ZCpX948MuoOCttZUzfJAd31smqCJauhCI7+rQ8zs+2NnKzFaFyFchmfXbpA/Djir5+4ga5zl6lhvDOF6u/jAp4WiU3+y3BryH00pSwaEjyDVciRt5Yt8ZPTGXiZmuuY7f2tVGJBR36PwgDubs1BH1qEk27pYL3d6HcuQoBuwpE0VZur7AGasYyWZ6XJAAVlfw4/VwTaEnffjiIe7zlacZseXdaBtGh0v/J7doqRH0sIZOLvqjYOrIp1i/xpr+6mWkWxgyCqxZppfbwt0YBzF9huWQxCBW254WzkkTyKEZpKZrZzrHbLC+O7ZuBDzAQ546ZfZA733G5DREAlmXuCDoCNAP6GQ0pWdvh86xGEFmr49KHXJWDyUdBKVti92yrhdcAZ/5ODf8LnZ8EkpG2ZLsHXDPtNgmg5PcGTw3YHFgWMIxjPE4SfVEJzXsde5Lay9l0K3MEQg0+UUxjQk0gE0bdXJZZptxkwEERNG73Y52XC9bq7RBhwZie8iExLNRuWQ7CFZ8upOe4FfOmau9Y3Q== root@home' > /tmp/ssh_keys.txt && qm set 9000 --sshkeys /tmp/ssh_keys.txt && rm /tmp/ssh_keys.txt && qm set 9000 --ipconfig0 ip=192.168.0.55/24,gw=192.168.0.1
 
 
-#working
-qm create 9000 --memory 2048 --name ubuntu-cloud --net0 virtio,bridge=vmbr0 --machine q35 --bios ovmf && qm importdisk 9000 /var/lib/vz/template/iso/ubuntu-24.04-server-cloudimg-amd64.img local-lvm && qm set 9000 --scsihw virtio-scsi-single --scsi0 local-lvm:vm-9000-disk-0,discard=on,iothread=1 --ide2 local-lvm:cloudinit --boot c --bootdisk scsi0 --efidisk0 local-lvm:1 --ciupgrade 1 --ciuser dhiego --cipassword -Ds21032962 --sshkeys "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQCbc8uz/GZuGU1a8vGrocddM9jDjzODH2nDBsZt3ZDWWeicdKWFj0OP+fpzFAn2+qYXpBdRrEPq3SX/SncZUJCgYtQOBqPRr9nr/eaOPP4w8OCnQqmgJnksFyEK4nzPrJEFjUmmULLBUtA41iS9hhnuc8ZCpX948MuoOCttZUzfJAd31smqCJauhCI7+rQ8zs+2NnKzFaFyFchmfXbpA/Djir5+4ga5zl6lhvDOF6u/jAp4WiU3+y3BryH00pSwaEjyDVciRt5Yt8ZPTGXiZmuuY7f2tVGJBR36PwgDubs1BH1qEk27pYL3d6HcuQoBuwpE0VZur7AGasYyWZ6XJAAVlfw4/VwTaEnffjiIe7zlacZseXdaBtGh0v/J7doqRH0sIZOLvqjYOrIp1i/xpr+6mWkWxgyCqxZppfbwt0YBzF9huWQxCBW254WzkkTyKEZpKZrZzrHbLC+O7ZuBDzAQ546ZfZA733G5DREAlmXuCDoCNAP6GQ0pWdvh86xGEFmr49KHXJWDyUdBKVti92yrhdcAZ/5ODf8LnZ8EkpG2ZLsHXDPtNgmg5PcGTw3YHFgWMIxjPE4SfVEJzXsde5Lay9l0K3MEQg0+UUxjQk0gE0bdXJZZptxkwEERNG73Y52XC9bq7RBhwZie8iExLNRuWQ7CFZ8upOe4FfOmau9Y3Q== root@home ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQCzz/yPx8rC1KsnXm+PkEogIZfrjRWiQvPk/ngD4Ol723de8SDhV8PCo/AloZYp3SiYz3aIoKKgr6C4iUcxxsKTWCTdPLQLISuOoenYDoxgXw74gg6Ulsc5FBdyojOANbL9UVObNiBMhQvlXj4iomDB6Mbgi0fU6h1JoVMIR2/DD0mff/1o0T+ycIbEx/tK6ScY+jh3tMBxU/rnCESF81/WLeOArp9UkhmqpQOS26VKLn4W8ml0HQZ4oMublztiguMZ0p2hMfiU3IbfXGz+JrGyeKi4gV6D8lal9EFRN7B7mTr3fzMkw+gb3MTleckAP1ITyfKlEU26n0dcVyywHWaLKVn4Zu/Xa6Tt7c4NE8LnuWSkNTie8uhRW+rVbQ8kk72XiW0GAxoO1iVGzljmIh4Lw3DDLhp9wp5ACI/4NJMlOJmLPfuyMh5F0Er891a21D+yKskgEml8tPB37JchGPW7IRxYYQS6g79PWE3n2aMAQxGPzeUgVRaGziCJIMrCq5mgzbN255vB5NzsBAwqRbpQqcXql+N0FVVyMP4pNYF2sh8Gii1wn2MrB7cye22Y3sZvUumUE0f26F55dUJZ116vThdh9mbsMnWZlk3+bTTUSSLfrDObc0aS6/FDxsjov01vWxzCm8K7Qd/QlQNPpJlhxo+keuA7kcrQLjtqPPeS+Q== dhiego.silva@hotmail.com" --ipconfig0 ip=192.168.0.55/24,gw=192.168.0.1 --sshkey ~/.ssh/id_rsa.pub
+sudo apt update
+sudo apt install qemu-guest-agent
+sudo systemctl enable --now qemu-guest-agent
