@@ -1,0 +1,137 @@
+---
+- name: Setup Alpine Linux for Docker, Docker Compose, and Automated Upgrades
+  hosts: alpine
+  become: true
+
+  tasks:
+    - name: Update repository to use the latest stable Alpine packages
+      ansible.builtin.lineinfile:
+        path: /etc/apk/repositories
+        regexp: '^https://dl-cdn.alpinelinux.org/alpine/v[0-9\.]+/main$'
+        line: 'https://dl-cdn.alpinelinux.org/alpine/latest-stable/main'
+        state: present
+      register: main_repo
+
+    - name: Update community repository to use the latest stable Alpine packages
+      ansible.builtin.lineinfile:
+        path: /etc/apk/repositories
+        regexp: '^https://dl-cdn.alpinelinux.org/alpine/v[0-9\.]+/community$'
+        line: 'https://dl-cdn.alpinelinux.org/alpine/latest-stable/community'
+        state: present
+      register: community_repo
+
+    - name: Run apk update if repositories were modified
+      ansible.builtin.command: apk update
+      when: main_repo.changed or community_repo.changed
+
+    - name: Install Docker and Docker Compose
+      ansible.builtin.apk:
+        name:
+          - docker
+          - docker-compose
+        update_cache: yes
+        state: latest
+
+    - name: Enable Docker service to start on boot
+      ansible.builtin.service:
+        name: docker
+        enabled: true
+
+    - name: Start Docker service
+      ansible.builtin.service:
+        name: docker
+        state: started
+
+    - name: Create a script to auto-upgrade and reboot if needed
+      ansible.builtin.copy:
+        dest: /usr/local/bin/auto_upgrade.sh
+        mode: '0755'
+        content: |
+          #!/bin/sh
+          # Update the package index
+          apk update
+          # Perform the upgrade
+          if apk upgrade --available | grep -q "Upgraded"; then
+            # If packages were upgraded, reboot
+            echo "System upgraded, rebooting..."
+            reboot
+          else
+            echo "No upgrades performed."
+          fi
+
+    - name: Schedule weekly cron job for auto-upgrade script
+      ansible.builtin.cron:
+        name: "Weekly auto-upgrade for Alpine Linux"
+        job: "/usr/local/bin/auto_upgrade.sh"
+        weekday: "0"  # Sunday
+        hour: "3"     # 3:00 AM
+        user: root
+        state: present
+
+    - name: Create Docker Compose file for Nginx
+      ansible.builtin.copy:
+        dest: /opt/docker-compose.yml
+        content: |
+          version: '3.7'
+          services:
+            nginx:
+              image: nginx:latest
+              container_name: nginx_openhab
+              ports:
+                - "80:80"
+              volumes:
+                - /opt/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+                - /opt/nginx/logs:/var/log/nginx
+              restart: always
+
+    - name: Create Nginx configuration file
+      ansible.builtin.copy:
+        dest: /opt/nginx/nginx.conf
+        content: |
+          worker_processes auto;
+          events {
+              worker_connections 1024;
+          }
+          http {
+              include /etc/nginx/mime.types;
+              default_type application/octet-stream;
+              sendfile on;
+              keepalive_timeout 65;
+
+              server {
+                  listen 80;
+                  server_name 192.168.0.99;
+
+                  location /openhab/ {
+                      proxy_pass http://192.168.0.30:8080/;
+                      proxy_set_header Host $host;
+                      proxy_set_header X-Real-IP $remote_addr;
+                      proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+
+                      # Improved performance settings for OpenHAB
+                      proxy_buffering off;
+                      proxy_cache_bypass $http_upgrade;
+                      proxy_http_version 1.1;
+                      proxy_set_header Upgrade $http_upgrade;
+                      proxy_set_header Connection "upgrade";
+                  }
+              }
+          }
+        mode: '0644'
+
+    - name: Start Nginx service using Docker Compose
+      ansible.builtin.command:
+        cmd: "docker-compose -f /opt/docker-compose.yml up -d"
+        chdir: /opt
+
+    - name: Ensure Docker Compose is restarted if Compose file changes
+      ansible.builtin.copy:
+        dest: /opt/docker-compose.yml
+        content: "{{ lookup('file', '/opt/docker-compose.yml') }}"
+        notify: Restart nginx via Docker Compose
+
+  handlers:
+    - name: Restart nginx via Docker Compose
+      ansible.builtin.command:
+        cmd: "docker-compose -f /opt/docker-compose.yml restart nginx"
+        chdir: /opt
