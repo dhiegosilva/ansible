@@ -1,4 +1,4 @@
-Alpine (template base for ansible)
+#Alpine (template base for ansible)
 
 apk add --no-cache openssh python3 nano && \
 sed -i '/^#*PermitRootLogin/s/^#*PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config && \

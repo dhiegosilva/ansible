@@ -68,21 +68,35 @@
         user: root
         state: present
 
-    - name: Create Docker Compose file for Nginx
+    - name: Create necessary directories for Nginx
+      ansible.builtin.file:
+        path: /opt/nginx
+        state: directory
+        mode: '0755'
+
+    - name: Create Docker Compose file for Nginx and Watchtower
       ansible.builtin.copy:
         dest: /opt/docker-compose.yml
         content: |
           version: '3.7'
           services:
             nginx:
-              image: nginx:latest
+              image: nginx:alpine
               container_name: nginx_openhab
               ports:
                 - "80:80"
               volumes:
                 - /opt/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
                 - /opt/nginx/logs:/var/log/nginx
-              restart: always
+              restart: unless-stopped
+
+            watchtower:
+              image: containrrr/watchtower
+              container_name: watchtower
+              volumes:
+                - /var/run/docker.sock:/var/run/docker.sock
+              restart: unless-stopped
+              command: --cleanup --schedule "0 0 4 * * *"
 
     - name: Create Nginx configuration file
       ansible.builtin.copy:
@@ -119,16 +133,16 @@
           }
         mode: '0644'
 
-    - name: Start Nginx service using Docker Compose
+    - name: Start Nginx and Watchtower services using Docker Compose
       ansible.builtin.command:
         cmd: "docker-compose -f /opt/docker-compose.yml up -d"
         chdir: /opt
 
     - name: Ensure Docker Compose is restarted if Compose file changes
-      ansible.builtin.copy:
-        dest: /opt/docker-compose.yml
-        content: "{{ lookup('file', '/opt/docker-compose.yml') }}"
-        notify: Restart nginx via Docker Compose
+      ansible.builtin.command:
+        cmd: "docker-compose -f /opt/docker-compose.yml restart"
+        chdir: /opt
+      when: "docker_compose_file_changed is defined and docker_compose_file_changed"
 
   handlers:
     - name: Restart nginx via Docker Compose
