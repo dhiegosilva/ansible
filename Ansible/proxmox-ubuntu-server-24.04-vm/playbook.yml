@@ -1,0 +1,78 @@
+- name: Create a new Proxmox VM
+  hosts: proxmox_nodes
+  gather_facts: no
+  vars:
+    vm_id: "{{ hostvars[inventory_hostname]['vm_id'] }}"
+    vm_ip: "{{ hostvars[inventory_hostname]['vm_ip'] }}"
+    vm_password: "{{ hostvars[inventory_hostname]['vm_password'] }}"
+  tasks:
+    - name: Check if VM exists
+      command: "qm status {{ vm_id }}"
+      register: vm_status
+      ignore_errors: yes
+
+    - name: Create the VM with initial settings
+      command: "qm create {{ vm_id }} --memory 2048 --name ubuntu-cloud --net0 virtio,bridge=vmbr0 --cores 4 --machine q35 --bios ovmf"
+      when: vm_status.rc != 0
+
+    - name: Import the disk image for the VM
+      command: "qm importdisk {{ vm_id }} /var/lib/vz/template/iso/ubuntu-24.04-server-cloudimg-amd64.img local-lvm"
+      when: vm_status.rc != 0
+
+    - name: Set OS type to Linux
+      command: "qm set {{ vm_id }} --ostype l26"
+      when: vm_status.rc != 0
+
+    - name: Enable QEMU guest agent
+      command: "qm set {{ vm_id }} --agent enabled=1"
+      when: vm_status.rc != 0
+
+    - name: Set up SCSI controller and disk settings
+      command: "qm set {{ vm_id }} --scsihw virtio-scsi-single"
+      when: vm_status.rc != 0
+
+    - name: Set up SCSI disk configuration
+      command: "qm set {{ vm_id }} --scsi0 local-lvm:vm-{{ vm_id }}-disk-0,discard=on,iothread=1"
+      when: vm_status.rc != 0
+
+    - name: Add cloud-init disk and configure boot options
+      command: "qm set {{ vm_id }} --ide2 local-lvm:cloudinit"
+      when: vm_status.rc != 0
+
+    - name: Configure boot device
+      command: "qm set {{ vm_id }} --boot c --bootdisk scsi0"
+      when: vm_status.rc != 0
+
+    - name: Set up EFI disk for UEFI boot
+      command: "qm set {{ vm_id }} --efidisk0 local-lvm:1"
+      when: vm_status.rc != 0
+
+    - name: Enable cloud-init upgrade
+      command: "qm set {{ vm_id }} --ciupgrade 1"
+      when: vm_status.rc != 0
+
+    - name: Set cloud-init user
+      command: "qm set {{ vm_id }} --ciuser dhiego"
+
+    - name: Set cloud-init password
+      command: "qm set {{ vm_id }} --cipassword !Ds21032962"
+
+    - name: Add SSH keys to cloud-init
+      block:
+        - name: Create SSH keys file
+          copy:
+            content: |
+              ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQCzz/yPx8rC1KsnXm+PkEogIZfrjRWiQvPk/ngD4Ol723de8SDhV8PCo/AloZYp3SiYz3aIoKKgr6C4iUcxxsKTWCTdPLQLISuOoenYDoxgXw74gg6Ulsc5FBdyojOANbL9UVObNiBMhQvlXj4iomDB6Mbgi0fU6h1JoVMIR2/DD0mff/1o0T+ycIbEx/tK6ScY+jh3tMBxU/rnCESF81/WLeOArp9UkhmqpQOS26VKLn4W8ml0HQZ4oMublztiguMZ0p2hMfiU3IbfXGz+JrGyeKi4gV6D8lal9EFRN7B7mTr3fzMkw+gb3MTleckAP1ITyfKlEU26n0dcVyywHWaLKVn4Zu/Xa6Tt7c4NE8LnuWSkNTie8uhRW+rVbQ8kk72XiW0GAxoO1iVGzljmIh4Lw3DDLhp9wp5ACI/4NJMlOJmLPfuyMh5F0Er891a21D+yKskgEml8tPB37JchGPW7IRxYYQS6g79PWE3n2aMAQxGPzeUgVRaGziCJIMrCq5mgzbN255vB5NzsBAwqRbpQqcXql+N0FVVyMP4pNYF2sh8Gii1wn2MrB7cye22Y3sZvUumUE0f26F55dUJZ116vThdh9mbsMnWZlk3+bTTUSSLfrDObc0aS6/FDxsjov01vWxzCm8K7Qd/QlQNPpJlhxo+keuA7kcrQLjtqPPeS+Q== dhiego.silva@hotmail.com
+              ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQCbc8uz/GZuGU1a8vGrocddM9jDjzODH2nDBsZt3ZDWWeicdKWFj0OP+fpzFAn2+qYXpBdRrEPq3SX/SncZUJCgYtQOBqPRr9nr/eaOPP4w8OCnQqmgJnksFyEK4nzPrJEFjUmmULLBUtA41iS9hhnuc8ZCpX948MuoOCttZUzfJAd31smqCJauhCI7+rQ8zs+2NnKzFaFyFchmfXbpA/Djir5+4ga5zl6lhvDOF6u/jAp4WiU3+y3BryH00pSwaEjyDVciRt5Yt8ZPTGXiZmuuY7f2tVGJBR36PwgDubs1BH1qEk27pYL3d6HcuQoBuwpE0VZur7AGasYyWZ6XJAAVlfw4/VwTaEnffjiIe7zlacZseXdaBtGh0v/J7doqRH0sIZOLvqjYOrIp1i/xpr+6mWkWxgyCqxZppfbwt0YBzF9huWQxCBW254WzkkTyKEZpKZrZzrHbLC+O7ZuBDzAQ546ZfZA733G5DREAlmXuCDoCNAP6GQ0pWdvh86xGEFmr49KHXJWDyUdBKVti92yrhdcAZ/5ODf8LnZ8EkpG2ZLsHXDPtNgmg5PcGTw3YHFgWMIxjPE4SfVEJzXsde5Lay9l0K3MEQg0+UUxjQk0gE0bdXJZZptxkwEERNG73Y52XC9bq7RBhwZie8iExLNRuWQ7CFZ8upOe4FfOmau9Y3Q== root@home
+            dest: /tmp/ssh_keys.txt
+
+        - name: Set SSH keys in VM
+          command: "qm set {{ vm_id }} --sshkeys /tmp/ssh_keys.txt"
+
+        - name: Remove temporary SSH keys file
+          file:
+            path: /tmp/ssh_keys.txt
+            state: absent
+
+    - name: Set IP configuration for the VM
+      command: "qm set {{ vm_id }} --ipconfig0 ip=192.168.0.55/24,gw=192.168.0.1"
