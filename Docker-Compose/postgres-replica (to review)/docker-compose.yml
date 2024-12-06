@@ -1,6 +1,6 @@
 services:
   postgres-primary:
-    image: postgres:16
+    image: postgres:17
     container_name: postgres-primary
     environment:
       POSTGRES_USER: dhiego
@@ -14,7 +14,7 @@ services:
 
   # Replica PostgreSQL instance
   postgres-replica:
-    image: postgres:16
+    image: postgres:17
     container_name: postgres-replica
     environment:
       POSTGRES_USER: dhiego

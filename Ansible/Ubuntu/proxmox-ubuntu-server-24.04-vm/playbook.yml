@@ -75,4 +75,4 @@
             state: absent
 
     - name: Set IP configuration for the VM
-      command: "qm set {{ vm_id }} --ipconfig0 ip=192.168.0.55/24,gw=192.168.0.1"
+      command: "qm set {{ vm_id }} --ipconfig0 ip={{ vm_ip }}/24,gw=192.168.0.1"

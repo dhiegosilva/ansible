@@ -1,0 +1,41 @@
+---
+- name: Setup Alpine Linux for Ansible
+  hosts: all
+  become: true
+  vars:
+    venv_path: /root/ansible-env
+    profile_path: /root/.profile
+
+  tasks:
+    - name: Ensure Alpine package index is updated
+      ansible.builtin.command:
+        cmd: apk update
+      register: apk_update
+      changed_when: "'updating' in apk_update.stdout"
+
+    - name: Install required packages
+      ansible.builtin.package:
+        name:
+          - python3
+          - py3-pip
+          - py3-virtualenv
+          - openssl
+          - sshpass
+        state: present
+
+    - name: Install Ansible using pip3
+      ansible.builtin.pip:
+        name: ansible
+        executable: pip3
+
+    - name: Create a Python virtual environment
+      ansible.builtin.command:
+        cmd: python3 -m venv {{ venv_path }}
+      args:
+        creates: "{{ venv_path }}/bin/activate"
+
+    - name: Add virtual environment activation to root profile
+      ansible.builtin.lineinfile:
+        path: "{{ profile_path }}"
+        line: "source {{ venv_path }}/bin/activate"
+        state: present
