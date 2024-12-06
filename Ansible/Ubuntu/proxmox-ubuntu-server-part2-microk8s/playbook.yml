@@ -1,0 +1,76 @@
+- hosts: all
+  become: true
+  vars:
+    user_password: "f4x4d8p6"
+  tasks:
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+
+    - name: Install snapd
+      apt:
+        name: snapd
+        state: present
+
+    - name: Ensure classic snap support is enabled
+      command: "ln -s /var/lib/snapd/snap /snap"
+      args:
+        creates: /snap/snap
+
+    - name: Install microk8s
+      snap:
+        name: microk8s
+        classic: yes
+        state: present
+
+    - name: Ensure user dhiego exists
+      user:
+        name: dhiego
+        state: present
+
+    - name: Change password for user dhiego
+      user:
+        name: dhiego
+        password: "{{ user_password | password_hash('sha512') }}"
+
+    - name: Change password for user root
+      user:
+        name: root
+        password: "{{ user_password | password_hash('sha512') }}"
+
+    - name: Add user dhiego to microk8s group
+      user:
+        name: dhiego
+        groups: microk8s
+        append: yes
+
+    - name: Install master-specific addons
+      when: "inventory_hostname in groups['master']"
+      command: microk8s enable dns
+
+    - name: Enable iptables modules for microk8s
+      command: "modprobe br_netfilter"
+      ignore_errors: yes
+
+    - name: Configure sysctl for Kubernetes networking
+      lineinfile:
+        path: /etc/sysctl.conf
+        line: "net.bridge.bridge-nf-call-iptables=1"
+      notify:
+        - Reload sysctl
+
+    - name: Join worker nodes to the cluster
+      when: "inventory_hostname in groups['workers']"
+      shell: |
+        microk8s add-node | grep "microk8s join" > /tmp/join_command.sh
+        chmod +x /tmp/join_command.sh
+      delegate_to: "{{ groups['master'][0] }}"
+      run_once: true
+
+    - name: Execute join command on worker nodes
+      when: "inventory_hostname in groups['workers']"
+      shell: /tmp/join_command.sh
+
+  handlers:
+    - name: Reload sysctl
+      command: sysctl -p
