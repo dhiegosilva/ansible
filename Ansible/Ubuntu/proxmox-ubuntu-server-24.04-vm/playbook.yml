@@ -1,6 +1,6 @@
 - name: Create a new Proxmox VM and Configure HA for node1
   hosts: proxmox_nodes
-  gather_facts: no
+  gather_facts: false
   vars:
     vm_id: "{{ hostvars[inventory_hostname]['vm_id'] }}"
     vm_ip: "{{ hostvars[inventory_hostname]['vm_ip'] }}"
@@ -10,7 +10,7 @@
     - name: Check if VM exists
       command: "qm status {{ vm_id }}"
       register: vm_status
-      ignore_errors: yes
+      ignore_errors: true
 
     - name: Create the VM with initial settings
       command: "qm create {{ vm_id }} --memory 2048 --name {{ ubuntu_name }} --net0 virtio,bridge=vmbr0 --cores 4 --machine q35 --bios ovmf"
