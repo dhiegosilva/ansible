@@ -48,14 +48,30 @@
       when: "inventory_hostname in groups['master']"
       command: microk8s enable dns
 
-    - name: Enable iptables modules for microk8s
-      command: "modprobe br_netfilter"
-      ignore_errors: true
+    - name: Ensure br_netfilter module is loaded
+      modprobe:
+        name: br_netfilter
+        state: present
+
+    - name: Ensure br_netfilter module is loaded on boot
+      copy:
+        dest: /etc/modules-load.d/k8s.conf
+        content: |
+          br_netfilter
 
     - name: Configure sysctl for Kubernetes networking
       lineinfile:
         path: /etc/sysctl.conf
         line: "net.bridge.bridge-nf-call-iptables=1"
+        state: present
+      notify:
+        - Reload sysctl
+
+    - name: Enable ip6tables for bridged IPv6 traffic
+      lineinfile:
+        path: /etc/sysctl.conf
+        line: "net.bridge.bridge-nf-call-ip6tables=1"
+        state: present
       notify:
         - Reload sysctl
 
