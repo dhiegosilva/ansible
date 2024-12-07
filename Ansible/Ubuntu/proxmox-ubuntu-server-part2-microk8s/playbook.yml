@@ -50,7 +50,7 @@
 
     - name: Enable iptables modules for microk8s
       command: "modprobe br_netfilter"
-      ignore_errors: yes
+      ignore_errors: true
 
     - name: Configure sysctl for Kubernetes networking
       lineinfile:
@@ -58,6 +58,16 @@
         line: "net.bridge.bridge-nf-call-iptables=1"
       notify:
         - Reload sysctl
+
+    - name: Install unattended-upgrades package
+      apt:
+        name: unattended-upgrades
+        state: present
+
+    - name: Enable unattended-upgrades
+      command: dpkg-reconfigure --priority=low unattended-upgrades
+      args:
+        creates: /etc/apt/apt.conf.d/20auto-upgrades
 
     - name: Join worker nodes to the cluster
       when: "inventory_hostname in groups['workers']"

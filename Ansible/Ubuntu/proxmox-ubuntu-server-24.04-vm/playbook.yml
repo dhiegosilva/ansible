@@ -13,7 +13,7 @@
       ignore_errors: true
 
     - name: Create the VM with initial settings
-      command: "qm create {{ vm_id }} --memory 2048 --name {{ ubuntu_name }} --net0 virtio,bridge=vmbr0 --cores 4 --machine q35 --bios ovmf"
+      command: "qm create {{ vm_id }} --memory 4096 --name {{ ubuntu_name }} --net0 virtio,bridge=vmbr0 --cores 4 --machine q35 --bios ovmf"
       when: vm_status.rc != 0
 
     - name: Import the disk image for the VM
@@ -49,7 +49,7 @@
       when: vm_status.rc != 0
 
     - name: Enable cloud-init upgrade
-      command: "qm set {{ vm_id }} --ciupgrade 1"
+      command: "qm set {{ vm_id }} --ciupgrade 0"
       when: vm_status.rc != 0
 
     - name: Set cloud-init user

@@ -39,3 +39,8 @@
         path: "{{ profile_path }}"
         line: "source {{ venv_path }}/bin/activate"
         state: present
+
+    - name: Install passlib using pip
+      ansible.builtin.pip:
+        name: passlib
+        virtualenv: "{{ venv_path }}"
