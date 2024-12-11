@@ -13,7 +13,7 @@
       ignore_errors: true
 
     - name: Create the VM with initial settings
-      command: "qm create {{ vm_id }} --memory 4096 --name {{ ubuntu_name }} --net0 virtio,bridge=vmbr0 --cores 4 --machine q35 --bios ovmf"
+      command: "qm create {{ vm_id }} --memory 4096 --name {{ ubuntu_name }} --net0 virtio,bridge=vmbr0 --cores 6 --machine q35 --bios ovmf"
       when: vm_status.rc != 0
 
     - name: Import the disk image for the VM
@@ -32,7 +32,7 @@
       command: "qm set {{ vm_id }} --scsihw virtio-scsi-single"
       when: vm_status.rc != 0
 
-    - name: Add a new 8GB SCSI disk
+    - name: Add a new 16GB SCSI disk
       command: "qm set {{ vm_id }} --scsi0 cephpool:vm-{{ vm_id }}-disk-0,discard=on,iothread=1"
       when: vm_status.rc != 0
 
@@ -88,8 +88,8 @@
       command: "ha-manager set vm:{{ vm_id }} --max_restart 3 --state started"
       when: inventory_hostname == 'node1'
 
-    - name: Resize the SCSI disk to 8GB
-      command: "qm resize {{ vm_id }} scsi0 8G"
+    - name: Resize the SCSI disk to 16GB
+      command: "qm resize {{ vm_id }} scsi0 16G"
 
     - name: Verify HA configuration for node1
       command: "ha-manager status"

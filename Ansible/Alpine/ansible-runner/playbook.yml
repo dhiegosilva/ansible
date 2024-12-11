@@ -44,3 +44,17 @@
       ansible.builtin.pip:
         name: passlib
         virtualenv: "{{ venv_path }}"
+
+    - name: Install kubernetes Python package
+      ansible.builtin.pip:
+        name: kubernetes
+        virtualenv: "{{ venv_path }}"
+
+    - name: Install openshift Python package
+      ansible.builtin.pip:
+        name: openshift
+        virtualenv: "{{ venv_path }}"
+
+    - name: Install community.kubernetes Ansible collection
+      ansible.builtin.command:
+        cmd: "{{ venv_path }}/bin/ansible-galaxy collection install community.kubernetes"

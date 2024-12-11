@@ -1,0 +1,38 @@
+- name: Deploy PostgreSQL and Pgpool on MicroK8s
+  hosts: microk8s_master
+  tasks:
+    - name: Copy PostgreSQL and Pgpool configuration to the master
+      copy:
+        src: postgres-pgpool-deployment.yaml
+        dest: /tmp/postgres-pgpool-deployment.yaml
+
+    - name: Apply PostgreSQL and Pgpool configuration
+      command: microk8s kubectl apply -f /tmp/postgres-pgpool-deployment.yaml
+      args:
+        chdir: /tmp
+
+    - name: Wait for PostgreSQL StatefulSet to be ready
+      shell: |
+        microk8s kubectl rollout status statefulset/postgresql-repmgr --timeout=60s
+      register: postgres_rollout_status
+      retries: 5
+      delay: 10
+      until: postgres_rollout_status.rc == 0
+
+    - name: Wait for Pgpool deployment to be ready
+      shell: |
+        microk8s kubectl rollout status deployment/pgpool --timeout=60s
+      register: pgpool_rollout_status
+      retries: 5
+      delay: 10
+      until: pgpool_rollout_status.rc == 0
+
+    - name: Retrieve Pgpool Service NodePort
+      shell: |
+        microk8s kubectl get service pgpool-service -o jsonpath='{.spec.ports[0].nodePort}'
+      register: pgpool_node_port
+      changed_when: false
+
+    - name: Display Pgpool URL
+      debug:
+        msg: "Pgpool is available at http://{{ ansible_host }}:{{ pgpool_node_port.stdout }}"

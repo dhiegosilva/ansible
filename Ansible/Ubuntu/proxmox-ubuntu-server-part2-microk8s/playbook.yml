@@ -1,7 +1,9 @@
+---
 - hosts: all
   become: true
   vars:
     user_password: "f4x4d8p6"
+
   tasks:
     - name: Update apt cache
       apt:
@@ -17,11 +19,36 @@
       args:
         creates: /snap/snap
 
+    - name: Set keyboard layout to German
+      copy:
+        dest: /etc/default/keyboard
+        content: |
+          XKBMODEL="pc105"
+          XKBLAYOUT="de"
+          XKBVARIANT=""
+          XKBOPTIONS=""
+      notify:
+        - Reload keyboard configuration
+
+    - name: Install chrony for time synchronization
+      apt:
+        name: chrony
+        state: present
+
+    - name: Configure chrony for ntp.ubuntu.com
+      lineinfile:
+        path: /etc/chrony/chrony.conf
+        line: "server ntp.ubuntu.com iburst"
+        state: present
+      notify:
+        - Restart chrony
+
     - name: Install microk8s
       snap:
         name: microk8s
         classic: yes
         state: present
+        channel: 1.31/stable
 
     - name: Ensure user dhiego exists
       user:
@@ -43,10 +70,6 @@
         name: dhiego
         groups: microk8s
         append: yes
-
-    - name: Install master-specific addons
-      when: "inventory_hostname in groups['master']"
-      command: microk8s enable dns
 
     - name: Ensure br_netfilter module is loaded
       modprobe:
@@ -85,18 +108,107 @@
       args:
         creates: /etc/apt/apt.conf.d/20auto-upgrades
 
-    - name: Join worker nodes to the cluster
-      when: "inventory_hostname in groups['workers']"
-      shell: |
-        microk8s add-node | grep "microk8s join" > /tmp/join_command.sh
-        chmod +x /tmp/join_command.sh
-      delegate_to: "{{ groups['master'][0] }}"
-      run_once: true
+    - name: Install guest agent
+      apt:
+        name: qemu-guest-agent
+        state: present
 
-    - name: Execute join command on worker nodes
-      when: "inventory_hostname in groups['workers']"
-      shell: /tmp/join_command.sh
+    - name: Ensure guest agent service is running
+      service:
+        name: qemu-guest-agent
+        state: started
+        enabled: true
 
   handlers:
     - name: Reload sysctl
       command: sysctl -p
+
+    - name: Reload keyboard configuration
+      command: setupcon
+
+    - name: Restart chrony
+      service:
+        name: chrony
+        state: restarted
+
+
+- hosts: master
+  become: true
+  tasks:
+    - name: Wait for MicroK8s API to be ready
+      command: microk8s status --wait-ready
+
+    # Generate a stable join command with a custom token and a longer TTL to avoid expiration
+    - name: Initialize the MicroK8s master and capture join command
+      command: microk8s add-node --token 0123456789abcdef0123456789abcdef --token-ttl 120
+      register: join_command
+
+    - name: Debug raw output from add-node
+      debug:
+        var: join_command.stdout_lines
+
+    - name: Extract the actual join command
+      set_fact:
+        actual_join_command: >-
+          {{ join_command.stdout_lines | select("search", "^microk8s join") | list | first }}
+
+    - name: Debug the extracted join command
+      debug:
+        var: actual_join_command
+
+    - name: Share the actual join command with workers
+      set_fact:
+        worker_join_command: "{{ actual_join_command }}"
+      delegate_to: 127.0.0.1
+
+    - name: Enable DNS addon
+      command: microk8s enable dns
+
+    - name: Enable high availability
+      command: microk8s enable ha-cluster
+
+    - name: Get node name
+      command: microk8s kubectl get nodes -o jsonpath='{.items[0].metadata.name}'
+      register: node_name
+
+    - name: Label master node
+      command: microk8s kubectl label node {{ node_name.stdout }} role=master
+
+
+- hosts: workers
+  become: true
+  tasks:
+    - name: Wait for MicroK8s API to be ready on worker
+      command: microk8s status --wait-ready
+      register: worker_status
+      failed_when: false
+      changed_when: false
+
+    - name: Debug the join command received from master
+      debug:
+        var: hostvars[groups['master'][0]].worker_join_command
+
+    - name: Join the MicroK8s cluster as a worker
+      shell: "{{ hostvars[groups['master'][0]].worker_join_command }} --worker"
+      register: join_result
+      failed_when: join_result.rc != 0
+
+    - name: Debug join result
+      debug:
+        var: join_result
+
+    - name: Wait for MicroK8s API to be ready after join
+      command: microk8s status --wait-ready
+
+    - name: Label worker nodes
+      command: microk8s kubectl label node {{ inventory_hostname }} role=worker
+
+
+- hosts: all
+  tasks:
+    - name: Verify MicroK8s is running
+      command: microk8s status --wait-ready
+
+    - name: Check cluster status (master node only)
+      command: microk8s kubectl get nodes
+      when: "inventory_hostname in groups['master']"
