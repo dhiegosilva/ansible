@@ -1,0 +1,9 @@
+apt update && apt dist-upgrade -y && apt install -y iptables ipset curl openssh-server python3 nano && sed -i '/^#*PermitRootLogin/s/^#*PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config && systemctl enable ssh && systemctl start ssh && adduser --disabled-password --gecos "" dhiego && echo "dhiego:f4x4d8p6" | chpasswd
+
+#k3s master
+192.168.0.70
+#token
+K10cd287bbf08347a5b9049378cfde02d2f8f789aa29b6e2807a63dcc04e2374c2c::server:f094e587626a2a46f95669ce1db12ac2
+
+#join command
+curl -sfL https://get.k3s.io | K3S_URL=https://192.168.0.70:6443 K3S_TOKEN=K10cd287bbf08347a5b9049378cfde02d2f8f789aa29b6e2807a63dcc04e2374c2c::server:f094e587626a2a46f95669ce1db12ac2 sh -

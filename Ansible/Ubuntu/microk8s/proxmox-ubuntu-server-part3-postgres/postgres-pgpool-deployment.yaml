@@ -1,0 +1,196 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pg-0
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: pg-0
+  template:
+    metadata:
+      labels:
+        app: pg-0
+    spec:
+      containers:
+        - name: pg-0
+          image: bitnami/postgresql-repmgr:17
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRESQL_POSTGRES_PASSWORD
+              value: "adminpassword"
+            - name: POSTGRESQL_USERNAME
+              value: "customuser"
+            - name: POSTGRESQL_PASSWORD
+              value: "custompassword"
+            - name: POSTGRESQL_DATABASE
+              value: "customdatabase"
+            - name: REPMGR_PASSWORD
+              value: "repmgrpassword"
+            - name: REPMGR_PRIMARY_HOST
+              value: "pg-0"
+            - name: REPMGR_PARTNER_NODES
+              value: "pg-0,pg-1"
+            - name: REPMGR_NODE_NAME
+              value: "pg-0"
+            - name: REPMGR_NODE_NETWORK_NAME
+              value: "pg-0"
+          volumeMounts:
+            - mountPath: /bitnami/postgresql
+              name: pg-0-data
+      volumes:
+        - name: pg-0-data
+          persistentVolumeClaim:
+            claimName: pg-0-pvc
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pg-1
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: pg-1
+  template:
+    metadata:
+      labels:
+        app: pg-1
+    spec:
+      containers:
+        - name: pg-1
+          image: bitnami/postgresql-repmgr:17
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRESQL_POSTGRES_PASSWORD
+              value: "adminpassword"
+            - name: POSTGRESQL_USERNAME
+              value: "customuser"
+            - name: POSTGRESQL_PASSWORD
+              value: "custompassword"
+            - name: POSTGRESQL_DATABASE
+              value: "customdatabase"
+            - name: REPMGR_PASSWORD
+              value: "repmgrpassword"
+            - name: REPMGR_PRIMARY_HOST
+              value: "pg-0"
+            - name: REPMGR_PARTNER_NODES
+              value: "pg-0,pg-1"
+            - name: REPMGR_NODE_NAME
+              value: "pg-1"
+            - name: REPMGR_NODE_NETWORK_NAME
+              value: "pg-1"
+          volumeMounts:
+            - mountPath: /bitnami/postgresql
+              name: pg-1-data
+      volumes:
+        - name: pg-1-data
+          persistentVolumeClaim:
+            claimName: pg-1-pvc
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pgpool
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: pgpool
+  template:
+    metadata:
+      labels:
+        app: pgpool
+    spec:
+      containers:
+        - name: pgpool
+          image: bitnami/pgpool:4
+          ports:
+            - containerPort: 5432
+          env:
+            - name: PGPOOL_BACKEND_NODES
+              value: "0:pg-0:5432,1:pg-1:5432"
+            - name: PGPOOL_SR_CHECK_USER
+              value: "customuser"
+            - name: PGPOOL_SR_CHECK_PASSWORD
+              value: "custompassword"
+            - name: PGPOOL_ENABLE_LDAP
+              value: "no"
+            - name: PGPOOL_POSTGRES_USERNAME
+              value: "postgres"
+            - name: PGPOOL_POSTGRES_PASSWORD
+              value: "adminpassword"
+            - name: PGPOOL_ADMIN_USERNAME
+              value: "admin"
+            - name: PGPOOL_ADMIN_PASSWORD
+              value: "adminpassword"
+          livenessProbe:
+            exec:
+              command:
+                - /opt/bitnami/scripts/pgpool/healthcheck.sh
+            initialDelaySeconds: 10
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: pgpool
+  labels:
+    app: pgpool
+spec:
+  selector:
+    app: pgpool
+  ports:
+    - protocol: TCP
+      port: 5432
+      targetPort: 5432
+      nodePort: 30032 # Custom NodePort for external access
+  type: NodePort
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: pg-0
+spec:
+  selector:
+    app: pg-0
+  ports:
+    - protocol: TCP
+      port: 5432
+      targetPort: 5432
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: pg-1
+spec:
+  selector:
+    app: pg-1
+  ports:
+    - protocol: TCP
+      port: 5432
+      targetPort: 5432
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: pg-0-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: pg-1-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi

@@ -1,0 +1,30 @@
+- name: Deploy Metabase on K3S
+  hosts: k3s_master
+  tasks:
+    - name: Copy Kubernetes configuration to the master
+      copy:
+        src: metabase-deployment.yaml
+        dest: /tmp/metabase-deployment.yaml
+
+    - name: Apply Kubernetes configuration
+      command: kubectl apply -f /tmp/metabase-deployment.yaml
+      args:
+        chdir: /tmp
+
+    - name: Wait for Metabase deployment to be ready
+      shell: |
+        kubectl rollout status deployment/metabase --timeout=60s
+      register: rollout_status
+      retries: 5
+      delay: 10
+      until: rollout_status.rc == 0
+
+    - name: Retrieve Metabase Service NodePort
+      shell: |
+        kubectl get service metabase-service -o jsonpath='{.spec.ports[0].nodePort}'
+      register: node_port
+      changed_when: false
+
+    - name: Display Metabase URL
+      debug:
+        msg: "Metabase is available at http://{{ ansible_host }}:{{ node_port.stdout }}"
