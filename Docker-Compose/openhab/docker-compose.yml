@@ -1,0 +1,48 @@
+services:
+  watchtower:
+    image: containrrr/watchtower:latest
+    restart: unless-stopped
+    container_name: watchtower
+    command: --interval 30 openhab mosquitto watchtower
+    environment:
+      - WATCHTOWER_CLEANUP=true
+      - WATCHTOWER_INCLUDE_RESTARTING=true
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /etc/timezone:/etc/timezone:ro
+    ports:
+      - "5555:8080"
+
+  openhab:
+    image: "openhab/openhab"
+    container_name: openhab
+    restart: unless-stopped
+    ports:
+      - "8080:8080"      # OpenHAB main UI port
+      - "8443:8443"      # OpenHAB HTTPS port
+      - "5007:5007"      # OpenHAB remote console port
+    environment:
+      TZ: "Europe/Berlin"  # Replace with your timezone
+      OPENHAB_HTTP_PORT: "8080"
+      OPENHAB_HTTPS_PORT: "8443"
+      USER_ID: "9001"    # Adjust user ID if necessary
+      GROUP_ID: "9001"   # Adjust group ID if necessary
+      CRYPTO_POLICY: "unlimited"
+    volumes:
+      - "/opt/openhab/addons:/openhab/addons"     # Mount for additional bindings and addons
+      - "/opt/openhab/conf:/openhab/conf"         # Configuration files (e.g., rules, items, sitemap)
+      - "/opt/openhab/userdata:/openhab/userdata" # Persistent data
+    depends_on:
+      - mosquitto
+
+  mosquitto:
+    image: "eclipse-mosquitto:latest"
+    container_name: mosquitto
+    restart: unless-stopped
+    ports:
+      - "1883:1883"      # MQTT port for clients
+      - "9001:9001"      # WebSocket port for MQTT over WebSocket (optional)
+    volumes:
+      - "/opt/mosquitto/config:/mosquitto/config"   # Config files for Mosquitto
+      - "/opt/mosquitto/data:/mosquitto/data"       # Persistence data for Mosquitto
+      - "/opt/mosquitto/log:/mosquitto/log"         # Log files for Mosquitto
