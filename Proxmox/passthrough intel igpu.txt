@@ -1,0 +1,15 @@
+#PROXMOX iGPU passthrough
+
+#Grub
+nano /etc/default/grub
+GRUB_CMDLINE_LINUX_DEFAULT="quiet intel_iommu=on i915.enable_gvt=1"
+update-grub
+
+#Modules
+nano /etc/modules
+vfio
+vfio_iommu_type1
+vfio_pci
+vfio_virqfd
+
+usermod -aG render $USER && reboot
