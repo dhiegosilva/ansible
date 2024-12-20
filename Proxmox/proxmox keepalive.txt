@@ -3,9 +3,7 @@
 #Keepalived is a tool that can be used to configure a Virtual IP that can "float" between nodes. 
 #If one node fails, the VIP will automatically failover to another node in the cluster.
 
-apt-get update
-apt-get install keepalived
-
+apt update
 
 #KEEPALIVE Virtual IP
 apt install keepalived
@@ -26,7 +24,7 @@ vrrp_instance VI_1 {
     }
 
     virtual_ipaddress {
-        192.168.0.100/24
+        192.168.0.110/24
     }
 }
 
@@ -35,7 +33,7 @@ vrrp_instance VI_1 {
     state MASTER
     interface vmbr0
     virtual_router_id 51
-    priority 100
+    priority 90
     advert_int 1
 
     authentication {
@@ -44,13 +42,11 @@ vrrp_instance VI_1 {
     }
 
     virtual_ipaddress {
-        192.168.0.100/24
+        192.168.0.110/24
     }
 }
 
-systemctl enable keepalived
-systemctl start keepalived
-
+systemctl enable keepalived --now
 
 #test
 ip a show vmbr0

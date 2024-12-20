@@ -9,6 +9,24 @@
       apt:
         update_cache: yes
 
+    - name: Install necessary packages
+      apt:
+        name:
+          - ceph-common
+          - sshpass
+          - keepalived
+        state: present
+
+    - name: Copy ceph.conf from remote server
+      command: >
+        sshpass -p 'f4x4d8p6'
+        scp root@192.168.0.99:/etc/ceph/ceph.conf /etc/ceph/
+
+    - name: Copy ceph.client.admin.keyring from remote server
+      command: >
+        sshpass -p 'f4x4d8p6'
+        scp root@192.168.0.99:/etc/ceph/ceph.client.admin.keyring /etc/ceph/
+
     - name: Install snapd
       apt:
         name: snapd
@@ -119,6 +137,48 @@
         state: started
         enabled: true
 
+    - name: Configure Keepalived
+      copy:
+        dest: /etc/keepalived/keepalived.conf
+        content: |
+          {% if inventory_hostname in groups['master'] %}
+          vrrp_instance VI_1 {
+              state MASTER
+              interface vmbr0
+              virtual_router_id 51
+              priority 100
+              advert_int 1
+
+              authentication {
+                  auth_type PASS
+                  auth_pass 12345
+              }
+
+              virtual_ipaddress {
+                  192.168.0.120/24
+              }
+          }
+          {% else %}
+          vrrp_instance VI_1 {
+              state BACKUP
+              interface vmbr0
+              virtual_router_id 51
+              priority 90
+              advert_int 1
+
+              authentication {
+                  auth_type PASS
+                  auth_pass 12345
+              }
+
+              virtual_ipaddress {
+                  192.168.0.120/24
+              }
+          }
+          {% endif %}
+      notify:
+        - Restart keepalived
+
   handlers:
     - name: Reload sysctl
       command: sysctl -p
@@ -131,6 +191,10 @@
         name: chrony
         state: restarted
 
+    - name: Restart keepalived
+      service:
+        name: keepalived
+        state: restarted
 
 - hosts: master
   become: true
@@ -138,7 +202,6 @@
     - name: Wait for MicroK8s API to be ready
       command: microk8s status --wait-ready
 
-    # Generate a stable join command with a custom token and a longer TTL to avoid expiration
     - name: Initialize the MicroK8s master and capture join command
       command: microk8s add-node --token 0123456789abcdef0123456789abcdef --token-ttl 120
       register: join_command
@@ -166,14 +229,19 @@
 
     - name: Enable high availability
       command: microk8s enable ha-cluster
+#if ceph ############################
+    - name: Enable Storage
+      command: microk8s enable storage
 
+    - name: Enable RBD
+      command: microk8s enable rbd
+######################################
     - name: Get node name
       command: microk8s kubectl get nodes -o jsonpath='{.items[0].metadata.name}'
       register: node_name
 
     - name: Label master node
       command: microk8s kubectl label node {{ node_name.stdout }} role=master
-
 
 - hosts: workers
   become: true
@@ -202,7 +270,6 @@
 
     - name: Label worker nodes
       command: microk8s kubectl label node {{ inventory_hostname }} role=worker
-
 
 - hosts: all
   tasks:

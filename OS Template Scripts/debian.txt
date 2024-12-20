@@ -1,4 +1,4 @@
-apt update && apt dist-upgrade -y && apt install -y iptables ipset curl openssh-server python3 nano && sed -i '/^#*PermitRootLogin/s/^#*PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config && systemctl enable ssh && systemctl start ssh && adduser --disabled-password --gecos "" dhiego && echo "dhiego:f4x4d8p6" | chpasswd
+apt update && apt full-upgrade -y && apt install -y iptables ipset curl openssh-server python3 nano && sed -i '/^#*PermitRootLogin/s/^#*PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config && systemctl enable ssh && systemctl start ssh && adduser --disabled-password --gecos "" dhiego && echo "dhiego:f4x4d8p6" | chpasswd
 
 #k3s master
 192.168.0.70
