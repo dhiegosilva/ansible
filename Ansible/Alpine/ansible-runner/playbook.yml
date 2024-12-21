@@ -7,11 +7,25 @@
     profile_path: /root/.profile
 
   tasks:
-    - name: Ensure Alpine package index is updated
-      ansible.builtin.command:
-        cmd: apk update
-      register: apk_update
-      changed_when: "'updating' in apk_update.stdout"
+    - name: Update repository to use the latest stable Alpine packages
+      ansible.builtin.lineinfile:
+        path: /etc/apk/repositories
+        regexp: '^https://dl-cdn.alpinelinux.org/alpine/v[0-9\.]+/main$'
+        line: 'https://dl-cdn.alpinelinux.org/alpine/latest-stable/main'
+        state: present
+      register: main_repo
+
+    - name: Update community repository to use the latest stable Alpine packages
+      ansible.builtin.lineinfile:
+        path: /etc/apk/repositories
+        regexp: '^https://dl-cdn.alpinelinux.org/alpine/v[0-9\.]+/community$'
+        line: 'https://dl-cdn.alpinelinux.org/alpine/latest-stable/community'
+        state: present
+      register: community_repo
+
+    - name: Run apk update if repositories were modified
+      ansible.builtin.command: apk update
+      when: main_repo.changed or community_repo.changed
 
     - name: Install required packages
       ansible.builtin.package:

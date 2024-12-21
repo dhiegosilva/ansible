@@ -1,5 +1,5 @@
 ---
-- name: Setup Alpine Linux for Docker, Docker Compose, Nginx Reverse Proxy, and Automated Upgrades
+- name: Setup Alpine Linux for Docker, Docker Compose, and Automated Upgrades
   hosts: alpine
   become: true
 
@@ -68,78 +68,88 @@
         user: root
         state: present
 
-    - name: Create necessary directories for Nginx
-      ansible.builtin.file:
-        path: /opt/nginx
-        state: directory
-        mode: '0755'
-
-    - name: Create Docker Compose file for Nginx and Watchtower
+    - name: Create Docker Compose file
       ansible.builtin.copy:
         dest: /opt/docker-compose.yml
         content: |
-          version: '3.7'
           services:
-            nginx:
-              image: nginx:alpine
-              container_name: nginx_openhab
-              ports:
-                - "80:80"  # Map host's port 80 to container's port 80
-              volumes:
-                - /opt/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-                - /opt/nginx/logs:/var/log/nginx
-              restart: unless-stopped
 
             watchtower:
-              image: containrrr/watchtower
+              image: containrrr/watchtower:latest
+              restart: unless-stopped
               container_name: watchtower
+              command: --interval 30 pihole watchtower
+              environment:
+                - WATCHTOWER_CLEANUP=true
+                - WATCHTOWER_INCLUDE_RESTARTING=true
               volumes:
                 - /var/run/docker.sock:/var/run/docker.sock
+                - /etc/timezone:/etc/timezone:ro
+              ports:
+                - "5555:8080"
+
+            pihole:
+              container_name: pihole
+              image: pihole/pihole:latest
+              environment:
+                VIRTUAL_HOST: pihole
+                FTLCONF_LOCAL_IPV4: 192.168.0.33
+                PROXY_LOCATION: 192.168.0.33:80
+                VIRTUAL_PORT: 80
+                TZ: Europe/Berlin  # Set your timezone here
+          #      WEBPASSWORD: f4x4d8p6  # Password for the Pi-hole admin interface
+              volumes:
+                - /opt/ceph/piHole/etc-pihole:/etc/pihole
+                - /opt/ceph/piHole/etc-dnsmasq.d:/etc/dnsmasq.d
+          #    ports:
+          #      - "53:53/tcp"
+          #      - "53:53/udp"
+          #      - "67:67/udp"
+          #      - "80:80/tcp"
+          #      - "443:443/tcp"
               restart: unless-stopped
-              command: --cleanup --schedule "0 0 4 * * *"
-        mode: '0644'
+              network_mode: 'host'
+              dns:
+                - 127.0.0.1
+                - 1.1.1.1  # Or another DNS server of your choice
+              cap_add:
+                - NET_ADMIN  # Required to configure networking
 
-    - name: Create Nginx configuration file
-      ansible.builtin.copy:
-        dest: /opt/nginx/nginx.conf
-        content: |
-          worker_processes auto;
-          events {
-              worker_connections 1024;
-          }
-          http {
-              include /etc/nginx/mime.types;
-              default_type application/octet-stream;
-              sendfile on;
-              keepalive_timeout 65;
+            openhab:
+              image: "openhab/openhab:latest-alpine"
+              container_name: openhab
+              restart: unless-stopped
+              ports:
+                - "8080:8080"      # OpenHAB main UI port
+                - "8443:8443"      # OpenHAB HTTPS port
+                - "5007:5007"      # OpenHAB remote console port
+              environment:
+                TZ: "Europe/Berlin"  # Replace with your timezone
+                OPENHAB_HTTP_PORT: "8080"
+                OPENHAB_HTTPS_PORT: "8443"
+                USER_ID: "9001"    # Adjust user ID if necessary
+                GROUP_ID: "9001"   # Adjust group ID if necessary
+                CRYPTO_POLICY: "unlimited"
+              volumes:
+                - "/opt/ceph/openhab/addons:/openhab/addons"     # Mount for additional bindings and addons
+                - "/opt/ceph/openhab/conf:/openhab/conf"         # Configuration files (e.g., rules, items, sitemap)
+                - "/opt/ceph/openhab/userdata:/openhab/userdata" # Persistent data
+              depends_on:
+                - mosquitto
 
-              server {
-                  listen 80;
-                  server_name _;  # Catch all server name
+            mosquitto:
+              image: "eclipse-mosquitto:latest"
+              container_name: mosquitto
+              restart: unless-stopped
+              ports:
+                - "1883:1883"      # MQTT port for clients
+                - "9001:9001"      # WebSocket port for MQTT over WebSocket (optional)
+              volumes:
+                - "/opt/ceph/mosquitto/config:/mosquitto/config"   # Config files for Mosquitto
+                - "/opt/ceph/mosquitto/data:/mosquitto/data"       # Persistence data for Mosquitto
+                - "/opt/ceph/mosquitto/log:/mosquitto/log"         # Log files for Mosquitto
 
-                  location /openhab {
-                      proxy_pass http://192.168.0.30:8080;
-                      proxy_set_header Host $host;
-                      proxy_set_header X-Real-IP $remote_addr;
-                      proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-
-                      # Improved performance settings for OpenHAB
-                      proxy_buffering off;
-                      proxy_cache_bypass $http_upgrade;
-                      proxy_http_version 1.1;
-                      proxy_set_header Upgrade $http_upgrade;
-                      proxy_set_header Connection "upgrade";
-                  }
-
-                  location /test {
-                      default_type text/plain;
-                      return 200 'Nginx is working!';
-                  }
-              }
-          }
-        mode: '0644'
-
-    - name: Start Nginx and Watchtower services using Docker Compose
+    - name: Start Docker Compose
       ansible.builtin.command:
         cmd: "docker-compose -f /opt/docker-compose.yml up -d"
         chdir: /opt
@@ -149,9 +159,3 @@
         cmd: "docker-compose -f /opt/docker-compose.yml restart"
         chdir: /opt
       when: "docker_compose_file_changed is defined and docker_compose_file_changed"
-
-  handlers:
-    - name: Restart nginx via Docker Compose
-      ansible.builtin.command:
-        cmd: "docker-compose -f /opt/docker-compose.yml restart nginx"
-        chdir: /opt
