@@ -78,10 +78,10 @@
               image: containrrr/watchtower:latest
               restart: unless-stopped
               container_name: watchtower
-              command: --interval 30 pihole watchtower
               environment:
                 - WATCHTOWER_CLEANUP=true
                 - WATCHTOWER_INCLUDE_RESTARTING=true
+                - WATCHTOWER_POLL_INTERVAL=3600
               volumes:
                 - /var/run/docker.sock:/var/run/docker.sock
                 - /etc/timezone:/etc/timezone:ro
@@ -92,7 +92,7 @@
               container_name: pihole
               image: pihole/pihole:latest
               environment:
-                VIRTUAL_HOST: pihole
+                VIRTUAL_HOST: piholedhiego.duckdns.org
                 FTLCONF_LOCAL_IPV4: 192.168.0.33
                 PROXY_LOCATION: 192.168.0.33:80
                 VIRTUAL_PORT: 80
@@ -153,6 +153,7 @@
       ansible.builtin.command:
         cmd: "docker-compose -f /opt/docker-compose.yml up -d"
         chdir: /opt
+
 
     - name: Ensure Docker Compose is restarted if Compose file changes
       ansible.builtin.command:
