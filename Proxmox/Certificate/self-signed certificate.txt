@@ -1,0 +1,40 @@
+#nano /root/openssl-san.cnf
+
+[ req ]
+default_bits       = 2048
+default_md         = sha256
+prompt             = no
+encrypt_key        = no
+distinguished_name = req_distinguished_name
+req_extensions     = req_ext
+
+[ req_distinguished_name ]
+countryName                = DE
+stateOrProvinceName        = Hessen
+localityName               = Rodenbach
+organizationName           = Proxmox
+organizationalUnitName     = PVE
+commonName                 = frankfurt.home.org
+
+[ req_ext ]
+subjectAltName = @alt_names
+
+[ alt_names ]
+DNS.1   = frankfurt.home.org
+DNS.2   = proxmox.local
+IP.1    = 192.168.0.110
+
+
+
+openssl genrsa -out /root/pve-selfsigned.key 2048
+openssl req -new -key /root/pve-selfsigned.key -out /root/pve-selfsigned.csr -config /root/openssl-san.cnf
+openssl x509 -req -in /root/pve-selfsigned.csr -signkey /root/pve-selfsigned.key -out /root/pve-selfsigned.crt -days 365000 -extensions req_ext -extfile /root/openssl-san.cnf
+
+mv /etc/pve/local/pve-ssl.pem /etc/pve/local/pve-ssl.pem.bak
+mv /etc/pve/local/pve-ssl.key /etc/pve/local/pve-ssl.key.bak
+cp /root/pve-selfsigned.crt /etc/pve/local/pve-ssl.pem
+cp /root/pve-selfsigned.key /etc/pve/local/pve-ssl.key
+systemctl restart pveproxy && systemctl restart pvedaemon
+
+
+#copy cp /root/pve-selfsigned.crt to windows or linux
