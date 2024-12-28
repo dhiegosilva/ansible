@@ -79,16 +79,19 @@
         dest: /opt/nginx-proxy-manager/docker-compose.yml
         content: |
           services:
-            app:
+            nginx-proxy-manager:
               image: 'jc21/nginx-proxy-manager:latest'
               restart: unless-stopped
               ports:
                 - '80:80'   # HTTP
                 - '81:81'   # Admin interface
                 - '443:443' # HTTPS
+              environment:
+                - INITIAL_ADMIN_EMAIL=dhiego.silva@hotmail.com
+                - INITIAL_ADMIN_PASSWORD=f4x4d8p6
               volumes:
-                - ./data:/data
-                - ./letsencrypt:/etc/letsencrypt
+                - /opt/nginx-proxy-manager/data:/data
+                - /opt/nginx-proxy-manager/letsencrypt:/etc/letsencrypt
 
             watchtower:
               image: containrrr/watchtower
@@ -97,7 +100,6 @@
                 - /var/run/docker.sock:/var/run/docker.sock
               restart: unless-stopped
               command: --cleanup --schedule "0 0 4 * * *"
-        mode: '0644'
 
     - name: Start Nginx Proxy Manager and Watchtower services using Docker Compose
       ansible.builtin.command:
