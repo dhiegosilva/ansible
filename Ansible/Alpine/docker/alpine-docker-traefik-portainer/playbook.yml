@@ -1,0 +1,98 @@
+---
+- name: Setup Alpine Linux for Docker and Automated Upgrades
+  hosts: alpine
+  become: true
+
+  tasks:
+    - name: Update repository to use the latest stable Alpine packages
+      ansible.builtin.lineinfile:
+        path: /etc/apk/repositories
+        regexp: '^https://dl-cdn.alpinelinux.org/alpine/v[0-9\.]+/main$'
+        line: 'https://dl-cdn.alpinelinux.org/alpine/latest-stable/main'
+        state: present
+      register: main_repo
+
+    - name: Update community repository to use the latest stable Alpine packages
+      ansible.builtin.lineinfile:
+        path: /etc/apk/repositories
+        regexp: '^https://dl-cdn.alpinelinux.org/alpine/v[0-9\.]+/community$'
+        line: 'https://dl-cdn.alpinelinux.org/alpine/latest-stable/community'
+        state: present
+      register: community_repo
+
+    - name: Run apk update if repositories were modified
+      ansible.builtin.command: apk update
+      when: main_repo.changed or community_repo.changed
+
+    - name: Install Docker, Docker Compose, and curl
+      ansible.builtin.apk:
+        name:
+          - docker
+          - docker-compose
+          - curl
+        update_cache: yes
+        state: latest
+
+    - name: Enable Docker service to start on boot
+      ansible.builtin.service:
+        name: docker
+        enabled: true
+
+    - name: Start Docker service
+      ansible.builtin.service:
+        name: docker
+        state: started
+
+    - name: Install acme.sh for certificate management
+      ansible.builtin.shell: |
+        curl https://get.acme.sh | sh
+        export DuckDNS_Token=2822349a-a978-4251-9b55-599ba98585aa
+        /root/.acme.sh/acme.sh --issue --dns dns_duckdns -d portainerlab.duckdns.org --keylength ec-256
+      environment:
+        DuckDNS_Token: "2822349a-a978-4251-9b55-599ba98585aa"
+
+    - name: Create docker-compose.yml in /opt/
+      ansible.builtin.copy:
+        dest: /opt/docker-compose.yml
+        content: |
+          services:
+            portainer:
+              image: portainer/portainer-ce:latest
+              container_name: portainer
+              ports:
+                - "443:9443"
+              volumes:
+                - /var/run/docker.sock:/var/run/docker.sock
+                - portainer_data:/data
+                - /root/.acme.sh/portainerlab.duckdns.org_ecc:/certs:ro
+              command: >
+                --sslcert /certs/fullchain.cer
+                --sslkey /certs/portainerlab.duckdns.org.key
+          volumes:
+            portainer_data:
+
+    - name: Create a script to auto-upgrade and reboot if needed
+      ansible.builtin.copy:
+        dest: /usr/local/bin/auto_upgrade.sh
+        mode: '0755'
+        content: |
+          #!/bin/sh
+          # Update the package index
+          apk update
+          # Perform the upgrade
+          if apk upgrade --available | grep -q "Upgraded"; then
+            # If packages were upgraded, reboot
+            echo "System upgraded, rebooting..."
+            reboot
+          else
+            echo "No upgrades performed."
+          fi
+
+    - name: Schedule weekly cron job for auto-upgrade script
+      ansible.builtin.cron:
+        name: "Weekly auto-upgrade for Alpine Linux"
+        job: "/usr/local/bin/auto_upgrade.sh"
+        weekday: "0"  # Sunday
+        hour: "3"     # 3:00 AM
+        user: root
+        state: present

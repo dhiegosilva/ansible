@@ -91,6 +91,7 @@
             pihole:
               container_name: pihole
               image: pihole/pihole:latest
+              hostname: piholedhiego
               environment:
                 - VIRTUAL_HOST=piholedhiego.duckdns.org
           #      - FTLCONF_LOCAL_IPV4=192.168.0.33
@@ -101,12 +102,7 @@
               volumes:
                 - /opt/ceph/piHole/etc-pihole:/etc/pihole
                 - /opt/ceph/piHole/etc-dnsmasq.d:/etc/dnsmasq.d
-              ports:
-                - "53:53/tcp"
-                - "53:53/udp"
-                - "67:67/udp"
-                - "80:80/tcp"
-                - "443:443/tcp"
+              network_mode: 'host'
               restart: unless-stopped
               dns:
                 - 127.0.0.1
