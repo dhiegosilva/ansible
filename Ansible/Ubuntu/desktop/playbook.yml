@@ -145,6 +145,32 @@
           - gnome-logs
         state: absent
 
+    - name: Install Fish shell
+      ansible.builtin.apt:
+        name: fish
+        state: present
+
+    - name: Set Fish shell as default for all users
+      ansible.builtin.shell: |
+        chsh -s /usr/bin/fish $(whoami)
+
+    - name: Configure Fish shell as default at startup
+      ansible.builtin.lineinfile:
+        path: /etc/passwd
+        regexp: '^(.*?):(.*?):(.*?):(.*?):(.*?):(.*?):/bin/bash$'
+        line: '\1:\2:\3:\4:\5:\6:/usr/bin/fish'
+        state: present
+
+    - name: Install GNOME Software
+      ansible.builtin.apt:
+        name: gnome-software
+        state: present
+
+    - name: Install GNOME Software Flatpak plugin
+      ansible.builtin.apt:
+        name: gnome-software-plugin-flatpak
+        state: present
+
   handlers:
     - name: Apply network changes
       ansible.builtin.command: "netplan apply"
