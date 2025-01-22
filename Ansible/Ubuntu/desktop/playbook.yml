@@ -130,8 +130,10 @@
 
     - name: Restart SSH service
       ansible.builtin.systemd:
-        name: sshd
+        name: "{{ ssh_service_name }}"
         state: restarted
+      vars:
+        ssh_service_name: "{{ 'ssh' if ansible_distribution in ['Ubuntu', 'Debian'] else 'sshd' }}"
 
     - name: Set root password
       ansible.builtin.shell: |
@@ -150,9 +152,11 @@
         name: fish
         state: present
 
-    - name: Set Fish shell as default for all users
+    - name: Set Fish as default shell for specific user
       ansible.builtin.shell: |
-        chsh -s /usr/bin/fish $(whoami)
+        chsh -s /usr/bin/fish dhiego
+      args:
+        executable: /bin/bash
 
     - name: Configure Fish shell as default at startup
       ansible.builtin.lineinfile:
