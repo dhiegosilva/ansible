@@ -1,0 +1,26 @@
+ethtool enp2s0
+ethtool -s <network-interface> wol g
+ethtool -s enp2s0 wol g
+**
+nano /etc/network/interfaces
+**
+
+
+auto lo
+iface lo inet loopback
+
+iface enp2s0 inet manual
+    post-up /sbin/ethtool -s enp2s0 wol g
+    post-down /sbin/ethtool -s enp2s0 wol g
+
+auto vmbr0
+iface vmbr0 inet static
+        address 192.168.0.98/24
+        gateway 192.168.0.1
+        bridge-ports enp2s0
+        bridge-stp off
+        bridge-fd 0
+
+source /etc/network/interfaces.d/*
+
+

@@ -175,6 +175,20 @@
         name: gnome-software-plugin-flatpak
         state: present
 
+    - name: Add Oibaf graphics drivers PPA
+      ansible.builtin.apt_repository:
+        repo: ppa:kisak/kisak-mesa
+        state: present
+
+    - name: Update apt cache
+      ansible.builtin.apt:
+        update_cache: yes
+
+    - name: Install Preload
+      ansible.builtin.apt:
+        name: preload
+        state: present
+
   handlers:
     - name: Apply network changes
       ansible.builtin.command: "netplan apply"
