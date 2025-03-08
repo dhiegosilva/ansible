@@ -93,12 +93,14 @@
               image: pihole/pihole:latest
               hostname: piholedhiego
               environment:
+                - TZ=Europe/Berlin
                 - VIRTUAL_HOST=piholedhiego.duckdns.org
-          #      - FTLCONF_LOCAL_IPV4=192.168.0.33
                 - PROXY_LOCATION=piholedhiego.duckdns.org
                 - VIRTUAL_PORT=80
-                - TZ=Europe/Berlin
-                - PIHOLE_DNS_=1.1.1.1;8.8.8.8
+                - PIHOLE_DNS_1=1.1.1.1  # Use primary DNS
+                - PIHOLE_DNS_2=8.8.8.8  # Use secondary DNS
+                - FTLCONF_webserver_api_password=f4x4d8p6
+                - DNSMASQ_LISTENING=all  # Ensure it listens to all interfaces
               volumes:
                 - /opt/ceph/piHole/etc-pihole:/etc/pihole
                 - /opt/ceph/piHole/etc-dnsmasq.d:/etc/dnsmasq.d
