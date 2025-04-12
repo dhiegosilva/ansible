@@ -3,10 +3,10 @@ services:
     image: containrrr/watchtower:latest
     restart: unless-stopped
     container_name: watchtower
-    command: --interval 30 openhab mosquitto watchtower
     environment:
       - WATCHTOWER_CLEANUP=true
       - WATCHTOWER_INCLUDE_RESTARTING=true
+      - WATCHTOWER_POLL_INTERVAL=3600
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - /etc/timezone:/etc/timezone:ro
@@ -14,7 +14,7 @@ services:
       - "5555:8080"
 
   openhab:
-    image: "openhab/openhab"
+    image: "openhab/openhab:latest-alpine"
     container_name: openhab
     restart: unless-stopped
     ports:
@@ -29,9 +29,9 @@ services:
       GROUP_ID: "9001"   # Adjust group ID if necessary
       CRYPTO_POLICY: "unlimited"
     volumes:
-      - "/opt/openhab/addons:/openhab/addons"     # Mount for additional bindings and addons
-      - "/opt/openhab/conf:/openhab/conf"         # Configuration files (e.g., rules, items, sitemap)
-      - "/opt/openhab/userdata:/openhab/userdata" # Persistent data
+      - "/opt/ceph/openhab/addons:/openhab/addons"     # Mount for additional bindings and addons
+      - "/opt/ceph/openhab/conf:/openhab/conf"         # Configuration files (e.g., rules, items, sitemap)
+      - "/opt/ceph/openhab/userdata:/openhab/userdata" # Persistent data
     depends_on:
       - mosquitto
 

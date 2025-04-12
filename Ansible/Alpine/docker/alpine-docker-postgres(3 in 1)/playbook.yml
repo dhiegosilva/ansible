@@ -55,8 +55,22 @@
         dest: /opt/docker-compose.yml
         mode: '0644'
         content: |
-          version: "3.9"
           services:
+            
+            watchtower:
+              image: containrrr/watchtower:latest
+              restart: unless-stopped
+              container_name: watchtower
+              environment:
+                - WATCHTOWER_CLEANUP=true
+                - WATCHTOWER_INCLUDE_RESTARTING=true
+                - WATCHTOWER_POLL_INTERVAL=3600
+              volumes:
+                - /var/run/docker.sock:/var/run/docker.sock
+                - /etc/timezone:/etc/timezone:ro
+              ports:
+                - "5555:8080"
+
             postgres:
               image: postgres:17-alpine
               container_name: postgres
@@ -102,16 +116,6 @@
               volumes:
                 - /opt/pgadmin_data:/var/lib/pgadmin
 
-            watchtower:
-              image: containrrr/watchtower:latest
-              container_name: watchtower
-              environment:
-                - WATCHTOWER_CLEANUP=true
-                - WATCHTOWER_LABEL_ENABLE=true
-              volumes:
-                - /var/run/docker.sock:/var/run/docker.sock
-              restart: unless-stopped
-              command: --interval 300
 
     - name: Create PgBouncer configuration directory
       ansible.builtin.file:
