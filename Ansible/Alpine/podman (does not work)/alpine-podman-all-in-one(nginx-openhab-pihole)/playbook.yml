@@ -4,6 +4,35 @@
   become: true
 
   tasks:
+
+    - name: Set Podman storage driver to vfs for LXC compatibility
+      ansible.builtin.copy:
+        dest: /etc/containers/storage.conf
+        content: |
+          [storage]
+          driver = "vfs"
+          runroot = "/var/run/containers/storage"
+          graphroot = "/var/lib/containers/storage"
+
+    - name: Create safe containers.conf with LXC-friendly cgroup manager
+      ansible.builtin.copy:
+        dest: /etc/containers/containers.conf
+        content: |
+          [engine]
+          cgroup_manager = "cgroupfs"
+
+    - name: Clear Podman storage database to accept new driver
+      ansible.builtin.file:
+        path: /var/lib/containers/storage
+        state: absent
+
+    - name: Set Podman cgroup manager to cgroupfs (safe for LXC)
+      ansible.builtin.lineinfile:
+        path: /etc/containers/containers.conf
+        line: 'cgroup_manager = "cgroupfs"'
+        insertafter: '^\[engine\]'
+        create: yes
+    
     - name: Update repository to use the latest stable Alpine packages
       ansible.builtin.lineinfile:
         path: /etc/apk/repositories
