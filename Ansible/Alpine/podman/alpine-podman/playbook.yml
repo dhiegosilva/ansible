@@ -34,6 +34,15 @@
         update_cache: yes
         state: present
 
+    - name: Ensure /etc/subuid and /etc/subgid exist for current user
+      ansible.builtin.lineinfile:
+        path: "{{ item.path }}"
+        line: "{{ ansible_user }}:100000:65536"
+        create: yes
+      loop:
+        - { path: /etc/subuid }
+        - { path: /etc/subgid }
+
     - name: Enable and start Podman service
       ansible.builtin.shell: |
         rc-update add podman default

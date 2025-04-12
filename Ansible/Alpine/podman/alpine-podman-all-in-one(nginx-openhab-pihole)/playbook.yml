@@ -30,7 +30,7 @@
           - podman
           - podman-compose
           - fuse-overlayfs
-          - shadow  # for usermod if needed
+          - shadow
         update_cache: yes
         state: present
 
@@ -59,43 +59,96 @@
       ansible.builtin.debug:
         msg: "Podman version: {{ podman_version.stdout }}"
 
-    - name: Create podman-compose.yml in /opt
+    - name: Create Docker Compose file (Podman-compatible)
       ansible.builtin.copy:
-        dest: /opt/podman-compose.yml
-        mode: '0644'
+        dest: /opt/docker-compose.yml
         content: |
+          version: '3'
           services:
-            postgres:
-              image: postgres:17-alpine
-              container_name: postgres
-              environment:
-                POSTGRES_DB: metabase
-                POSTGRES_USER: dhiego
-                POSTGRES_PASSWORD: f4x4d8p6
-              volumes:
-                - /opt/postgres_data:/var/lib/postgresql/data
-              ports:
-                - "5432:5432"
 
             watchtower:
               image: containrrr/watchtower:latest
+              restart: unless-stopped
               container_name: watchtower
               environment:
                 - WATCHTOWER_CLEANUP=true
-                - WATCHTOWER_LABEL_ENABLE=true
+                - WATCHTOWER_INCLUDE_RESTARTING=true
+                - WATCHTOWER_POLL_INTERVAL=3600
+              ports:
+                - "5555:8080"
+              # NOTE: docker.sock volume removed – not needed for Podman
+
+            pihole:
+              container_name: pihole
+              image: pihole/pihole:latest
+              hostname: piholedhiego
+              environment:
+                - TZ=Europe/Berlin
+                - VIRTUAL_HOST=piholedhiego.duckdns.org
+                - PROXY_LOCATION=piholedhiego.duckdns.org
+                - VIRTUAL_PORT=80
+                - PIHOLE_DNS_1=1.1.1.1
+                - PIHOLE_DNS_2=8.8.8.8
+                - FTLCONF_webserver_api_password=f4x4d8p6
+                - DNSMASQ_LISTENING=all
               volumes:
-                - /var/run/docker.sock:/var/run/docker.sock
+                - /opt/piHole/etc-pihole:/etc/pihole
+                - /opt/piHole/etc-dnsmasq.d:/etc/dnsmasq.d
+              network_mode: host
               restart: unless-stopped
+              dns:
+                - 127.0.0.1
+                - 1.1.1.1
+              cap_add:
+                - NET_ADMIN
 
-    - name: Ensure /opt folder ownership and permissions
-      ansible.builtin.file:
-        path: /opt
-        state: directory
-        owner: root
-        group: root
-        mode: '0755'
+            openhab:
+              image: "openhab/openhab:latest-alpine"
+              container_name: openhab
+              restart: unless-stopped
+              ports:
+                - "8080:8080"
+                - "8443:8443"
+                - "5007:5007"
+              environment:
+                TZ: "Europe/Berlin"
+                OPENHAB_HTTP_PORT: "8080"
+                OPENHAB_HTTPS_PORT: "8443"
+                USER_ID: "9001"
+                GROUP_ID: "9001"
+                CRYPTO_POLICY: "unlimited"
+              volumes:
+                - "/opt/openhab/addons:/openhab/addons"
+                - "/opt/openhab/conf:/openhab/conf"
+                - "/opt/openhab/userdata:/openhab/userdata"
+              depends_on:
+                - mosquitto
 
-    - name: Create a script to auto-upgrade, reboot if needed, and start containers
+            mosquitto:
+              image: "eclipse-mosquitto:latest"
+              container_name: mosquitto
+              restart: unless-stopped
+              ports:
+                - "1883:1883"
+                - "9001:9001"
+              volumes:
+                - "/opt/mosquitto/config:/mosquitto/config"
+                - "/opt/mosquitto/data:/mosquitto/data"
+                - "/opt/mosquitto/log:/mosquitto/log"
+      register: docker_compose_file
+
+    - name: Start Podman Compose
+      ansible.builtin.command:
+        cmd: "podman-compose -f /opt/docker-compose.yml up -d"
+        chdir: /opt
+
+    - name: Ensure Podman Compose is restarted if Compose file changes
+      ansible.builtin.command:
+        cmd: "podman-compose -f /opt/docker-compose.yml restart"
+        chdir: /opt
+      when: "docker_compose_file.changed"
+
+    - name: Create a script to auto-upgrade and reboot if needed
       ansible.builtin.copy:
         dest: /usr/local/bin/auto_upgrade.sh
         mode: '0755'
@@ -111,13 +164,10 @@
           else
             echo "No upgrades performed."
           fi
-          # Start Podman containers
-          cd /opt
-          podman-compose up -d
 
     - name: Schedule weekly cron job for auto-upgrade script
       ansible.builtin.cron:
-        name: "Weekly auto-upgrade for Alpine Linux and start containers"
+        name: "Weekly auto-upgrade for Alpine Linux"
         job: "/usr/local/bin/auto_upgrade.sh"
         weekday: "0"  # Sunday
         hour: "3"     # 3:00 AM
