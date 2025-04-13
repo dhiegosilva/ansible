@@ -1,5 +1,5 @@
 ---
-- name: Setup Alpine Linux for Docker, Docker Compose, Nginx Proxy Manager, and Automated Upgrades
+- name: Setup Alpine Linux for Docker, Docker Compose, Nginx Reverse Proxy, and Automated Upgrades
   hosts: alpine
   become: true
 
@@ -15,7 +15,7 @@
     - name: Update community repository to use the latest stable Alpine packages
       ansible.builtin.lineinfile:
         path: /etc/apk/repositories
-        regexp: '^https://dl-cdn.alpinelinux.org/alpine/v[0\.]+/community$'
+        regexp: '^https://dl-cdn.alpinelinux.org/alpine/v[0-9\.]+/community$'
         line: 'https://dl-cdn.alpinelinux.org/alpine/latest-stable/community'
         state: present
       register: community_repo
@@ -68,31 +68,21 @@
         user: root
         state: present
 
-    - name: Create necessary directories for Nginx Proxy Manager
+    - name: Create required directories for WildFly config and data
       ansible.builtin.file:
-        path: /opt/nginx-proxy-manager
+        path: "{{ item }}"
         state: directory
         mode: '0755'
+      loop:
+        - /opt/wildfly/config
+        - /opt/wildfly/data
 
-    - name: Create Docker Compose file for Nginx Proxy Manager and Watchtower
+    - name: Create Docker Compose file
       ansible.builtin.copy:
-        dest: /opt/nginx-proxy-manager/docker-compose.yml
+        dest: /opt/docker-compose.yml
         content: |
+          version: "3"
           services:
-            nginx-proxy-manager:
-              image: 'jc21/nginx-proxy-manager:latest'
-              restart: unless-stopped
-              ports:
-                - '80:80'   # HTTP
-                - '81:81'   # Admin interface
-                - '443:443' # HTTPS
-              environment:
-                - INITIAL_ADMIN_EMAIL=dhiego.silva@hotmail.com
-                - INITIAL_ADMIN_PASSWORD=f4x4d8p6
-              volumes:
-                - /opt/nginx-proxy-manager/data:/data
-                - /opt/nginx-proxy-manager/letsencrypt:/etc/letsencrypt
-
             watchtower:
               image: containrrr/watchtower:latest
               restart: unless-stopped
@@ -107,13 +97,29 @@
               ports:
                 - "5555:8080"
 
-    - name: Start Nginx Proxy Manager and Watchtower services using Docker Compose
+            wildfly:
+              image: bitnami/wildfly:26.1.3
+              container_name: wildfly
+              restart: unless-stopped
+              ports:
+                - "8080:8080"
+                - "9990:9990"
+              volumes:
+                - /opt/wildfly/config:/bitnami/wildfly/config
+                - /opt/wildfly/data:/bitnami/wildfly/data
+              environment:
+                - WILDFLY_USERNAME=dhiego
+                - WILDFLY_PASSWORD=f4x4d8p6
+                - BITNAMI_DEBUG=true
+                - JAVA_OPTS=-Djboss.bind.address.management=0.0.0.0
+
+    - name: Start Docker Compose
       ansible.builtin.command:
-        cmd: "docker-compose -f /opt/nginx-proxy-manager/docker-compose.yml up -d"
-        chdir: /opt/nginx-proxy-manager
+        cmd: "docker-compose -f /opt/docker-compose.yml up -d"
+        chdir: /opt
 
     - name: Ensure Docker Compose is restarted if Compose file changes
       ansible.builtin.command:
-        cmd: "docker-compose -f /opt/nginx-proxy-manager/docker-compose.yml restart"
-        chdir: /opt/nginx-proxy-manager
+        cmd: "docker-compose -f /opt/docker-compose.yml restart"
+        chdir: /opt
       when: "docker_compose_file_changed is defined and docker_compose_file_changed"

@@ -43,7 +43,6 @@
         dest: /opt/docker-compose.yml
         mode: '0644'
         content: |
-          version: '3'
           services:
             frontend:
               image: ghcr.io/dhiegosilva/webreact-web-frontend:latest
@@ -59,14 +58,17 @@
 
             watchtower:
               image: containrrr/watchtower:latest
+              restart: unless-stopped
               container_name: watchtower
               environment:
                 - WATCHTOWER_CLEANUP=true
-                - WATCHTOWER_LABEL_ENABLE=true
+                - WATCHTOWER_INCLUDE_RESTARTING=true
+                - WATCHTOWER_POLL_INTERVAL=3600
               volumes:
                 - /var/run/docker.sock:/var/run/docker.sock
-              restart: unless-stopped
-              command: --interval 300
+                - /etc/timezone:/etc/timezone:ro
+              ports:
+                - "5555:8080"
         owner: root
         group: root
 

@@ -92,7 +92,6 @@
       ansible.builtin.copy:
         dest: /opt/docker-compose.yml
         content: |
-          version: '3'
           services:
 
             watchtower:

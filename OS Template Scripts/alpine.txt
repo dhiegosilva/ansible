@@ -5,4 +5,5 @@ sed -i '/^#*PermitRootLogin/s/^#*PermitRootLogin.*/PermitRootLogin yes/' /etc/ss
 rc-update add sshd && \
 service sshd start && \
 adduser -D dhiego && \
-echo "dhiego:f4x4d8p6" | chpasswd
+echo "dhiego:f4x4d8p6" | chpasswd && \
+reboot
