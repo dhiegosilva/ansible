@@ -68,20 +68,11 @@
         user: root
         state: present
 
-    - name: Create required directories for WildFly config and data
-      ansible.builtin.file:
-        path: "{{ item }}"
-        state: directory
-        mode: '0755'
-      loop:
-        - /opt/wildfly/config
-        - /opt/wildfly/data
 
     - name: Create Docker Compose file
       ansible.builtin.copy:
         dest: /opt/docker-compose.yml
         content: |
-          version: "3"
           services:
             watchtower:
               image: containrrr/watchtower:latest
@@ -104,9 +95,6 @@
               ports:
                 - "8080:8080"
                 - "9990:9990"
-              volumes:
-                - /opt/wildfly/config:/bitnami/wildfly/config
-                - /opt/wildfly/data:/bitnami/wildfly/data
               environment:
                 - WILDFLY_USERNAME=dhiego
                 - WILDFLY_PASSWORD=f4x4d8p6
