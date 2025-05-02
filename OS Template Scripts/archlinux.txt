@@ -2,40 +2,54 @@
 
 /usr/local/bin/yay-system-update.sh
 
+##################################################################################
+
 #!/bin/bash
+
+set -euo pipefail
 
 LOGFILE="$HOME/.local/logs/yay-system-update.log"
 mkdir -p "$(dirname "$LOGFILE")"
 
-{
-    echo "=== Starting system update: $(date) ==="
+log() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" >> "$LOGFILE"
+}
 
-    # Wait for pacman lock
-    while fuser /var/lib/pacman/db.lck >/dev/null 2>&1; do
-        echo "Waiting for pacman lock..."
-        sleep 5
-    done
+log "=== Starting system update ==="
 
-    # Update all packages (official + AUR)
-    echo "Running: yay -Syu"
-    yay -Syu --noconfirm
+# Wait for pacman lock
+while fuser /var/lib/pacman/db.lck >/dev/null 2>&1; do
+    log "Waiting for pacman lock..."
+    sleep 5
+done
 
-    # Clean orphaned packages
-    orphans=$(pacman -Qdtq)
-    if [[ -n "$orphans" ]]; then
-        echo "Removing orphans: $orphans"
-        yay -Rns $orphans --noconfirm
-    else
-        echo "No orphaned packages to remove."
-    fi
+# Update all packages
+log "Running: yay -Syu"
+if yay -Syu --noconfirm >> "$LOGFILE" 2>&1; then
+    log "Package update completed successfully."
+else
+    log "ERROR: Package update failed."
+    exit 1
+fi
 
-    # Clean yay cache
-    echo "Cleaning yay cache"
-    yay -Sc --noconfirm
+# Remove orphaned packages
+orphans=$(pacman -Qdtq || true)
+if [[ -n "$orphans" ]]; then
+    log "Removing orphans: $orphans"
+    yay -Rns $orphans --noconfirm >> "$LOGFILE" 2>&1 || log "WARNING: Failed to remove some orphans."
+else
+    log "No orphaned packages to remove."
+fi
 
-    echo "=== Update and cleanup completed: $(date) ==="
-    echo ""
-} >> "$LOGFILE" 2>&1
+# Clean yay cache
+log "Cleaning yay cache"
+yay -Sc --noconfirm >> "$LOGFILE" 2>&1 || log "WARNING: yay cache cleanup failed."
+
+log "=== Update and cleanup completed ==="
+
+
+
+##################################################################################
 
 
 sudo chown dhiego:dhiego /usr/local/bin/yay-system-update.sh
@@ -44,6 +58,7 @@ chmod +x /usr/local/bin/yay-system-update.sh
 
 sudo nano /etc/systemd/system/yay-system-update.service
 
+##################################################################################
 [Unit]
 Description=Arch Linux System Update with Yay and Cleanup
 After=network-online.target
@@ -60,7 +75,7 @@ IOSchedulingPriority=7
 [Install]
 WantedBy=multi-user.target
 
-
+##################################################################################
 
 sudo nano /etc/systemd/system/yay-system-update.timer
 
