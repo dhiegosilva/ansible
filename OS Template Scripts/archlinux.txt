@@ -1,0 +1,76 @@
+#autoupdate
+
+/usr/local/bin/yay-system-update.sh
+
+#!/bin/bash
+
+LOGFILE="$HOME/.local/logs/yay-system-update.log"
+mkdir -p "$(dirname "$LOGFILE")"
+
+{
+    echo "=== Starting system update: $(date) ==="
+
+    # Wait for pacman lock
+    while fuser /var/lib/pacman/db.lck >/dev/null 2>&1; do
+        echo "Waiting for pacman lock..."
+        sleep 5
+    done
+
+    # Update all packages (official + AUR)
+    echo "Running: yay -Syu"
+    yay -Syu --noconfirm
+
+    # Clean orphaned packages
+    orphans=$(pacman -Qdtq)
+    if [[ -n "$orphans" ]]; then
+        echo "Removing orphans: $orphans"
+        yay -Rns $orphans --noconfirm
+    else
+        echo "No orphaned packages to remove."
+    fi
+
+    # Clean yay cache
+    echo "Cleaning yay cache"
+    yay -Sc --noconfirm
+
+    echo "=== Update and cleanup completed: $(date) ==="
+    echo ""
+} >> "$LOGFILE" 2>&1
+
+
+sudo chown dhiego:dhiego /usr/local/bin/yay-system-update.sh
+chmod +x /usr/local/bin/yay-system-update.sh
+
+
+sudo nano /etc/systemd/system/yay-system-update.service
+
+[Unit]
+Description=Arch Linux System Update with Yay and Cleanup
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/yay-system-update.sh
+User=dhiego
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+
+[Install]
+WantedBy=multi-user.target
+
+
+
+sudo nano /etc/systemd/system/yay-system-update.timer
+
+[Unit]
+Description=Daily AUR + system update
+
+[Timer]
+OnBootSec=10min
+OnUnitActiveSec=1d
+Persistent=true
+
+[Install]
+WantedBy=timers.target
