@@ -1,4 +1,4 @@
-- name: Configure Ubuntu 24.10 Environment
+- name: Configure Ubuntu 25.04 Environment
   hosts: all
   become: true
   tasks:
@@ -19,16 +19,16 @@
       notify: Apply network changes
 
     - name: Check if snap is installed
-      ansible.builtin.command: "command -v snap"
+      ansible.builtin.stat:
+        path: /usr/bin/snap
       register: snap_check
-      ignore_errors: true
 
     - name: Stop snapd service to enable removal of core snaps
       ansible.builtin.systemd:
         name: snapd
         state: stopped
         enabled: no
-      when: snap_check.rc == 0
+      when: snap_check.stat.exists
 
     - name: Remove all non-core snap packages
       ansible.builtin.shell: |
@@ -37,7 +37,7 @@
         done
       ignore_errors: true
       register: snap_remove_noncore_result
-      when: snap_check.rc == 0
+      when: snap_check.stat.exists
 
     - name: Remove core snap packages
       ansible.builtin.shell: |
@@ -45,18 +45,24 @@
         snap remove --purge snap-store || true
         snap remove --purge core22 || true
       ignore_errors: true
-      when: snap_remove_noncore_result is succeeded and snap_check.rc == 0
+      when: snap_check.stat.exists and snap_remove_noncore_result is succeeded
 
     - name: Remove snap completely from the system
       ansible.builtin.apt:
         name: snapd
         state: absent
-      when: snap_remove_noncore_result is succeeded and snap_check.rc == 0
+      when: snap_check.stat.exists and snap_remove_noncore_result is succeeded
 
     - name: Upgrade all packages
       ansible.builtin.apt:
         update_cache: yes
         upgrade: dist
+
+    - name: Install Git
+      ansible.builtin.apt:
+        name: git
+        state: present
+        update_cache: yes
 
     - name: Install flatpak
       ansible.builtin.apt:
@@ -64,55 +70,34 @@
         state: present
 
     - name: Install flatpak repository (Flathub)
-      ansible.builtin.command: "flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo"
+      ansible.builtin.command: >
+        flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
       args:
         creates: /var/lib/flatpak/repo/flathub
 
-    - name: Install Brave Browser via Flatpak
-      ansible.builtin.command: "flatpak install -y flathub com.brave.Browser"
+    - name: Install applications via Flatpak
+      ansible.builtin.command: "flatpak install -y flathub {{ item.id }}"
       args:
-        creates: /var/lib/flatpak/app/com.brave.Browser
-
-    - name: Install PeaZip via Flatpak
-      ansible.builtin.command: "flatpak install -y flathub io.github.peazip.PeaZip"
-      args:
-        creates: /var/lib/flatpak/app/io.github.peazip.PeaZip
-
-    - name: Install Flatseal via Flatpak
-      ansible.builtin.command: "flatpak install -y flathub com.github.tchx84.Flatseal"
-      args:
-        creates: /var/lib/flatpak/app/com.github.tchx84.Flatseal
-
-    - name: Install VLC via Flatpak
-      ansible.builtin.command: "flatpak install -y flathub org.videolan.VLC"
-      args:
-        creates: /var/lib/flatpak/app/org.videolan.VLC
-
-    - name: Install Meld via Flatpak
-      ansible.builtin.command: "flatpak install -y flathub org.gnome.meld"
-      args:
-        creates: /var/lib/flatpak/app/org.gnome.meld
-
-    - name: Install DBeaver Community via Flatpak
-      ansible.builtin.command: "flatpak install -y flathub io.dbeaver.DBeaverCommunity"
-      args:
-        creates: /var/lib/flatpak/app/io.dbeaver.DBeaverCommunity
+        creates: "/var/lib/flatpak/app/{{ item.id }}"
+      loop:
+        - { id: com.brave.Browser }
+        - { id: io.github.peazip.PeaZip }
+        - { id: com.github.tchx84.Flatseal }
+        - { id: org.videolan.VLC }
+        - { id: org.gnome.meld }
+        - { id: io.dbeaver.DBeaverCommunity }
+        - { id: org.remmina.Remmina }
 
     - name: Install Visual Studio Code via .deb package
       ansible.builtin.shell: |
         wget -qO- https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor > packages.microsoft.gpg
-        sudo install -o root -g root -m 644 packages.microsoft.gpg /usr/share/keyrings/
-        echo "deb [arch=amd64 signed-by=/usr/share/keyrings/packages.microsoft.gpg] https://packages.microsoft.com/repos/code stable main" | sudo tee /etc/apt/sources.list.d/vscode.list
-        sudo apt-get install apt-transport-https -y
-        sudo apt-get update
-        sudo apt-get install code -y
+        install -o root -g root -m 644 packages.microsoft.gpg /usr/share/keyrings/
+        echo "deb [arch=amd64 signed-by=/usr/share/keyrings/packages.microsoft.gpg] https://packages.microsoft.com/repos/code stable main" > /etc/apt/sources.list.d/vscode.list
+        apt-get install apt-transport-https -y
+        apt-get update
+        apt-get install code -y
       args:
         creates: /usr/bin/code
-
-    - name: Install Remmina via Flatpak
-      ansible.builtin.command: "flatpak install -y flathub org.remmina.Remmina"
-      args:
-        creates: /var/lib/flatpak/app/org.remmina.Remmina
 
     - name: Allow root login via SSH
       ansible.builtin.lineinfile:
@@ -136,10 +121,11 @@
         ssh_service_name: "{{ 'ssh' if ansible_distribution in ['Ubuntu', 'Debian'] else 'sshd' }}"
 
     - name: Set root password
-      ansible.builtin.shell: |
-        echo 'root:f4x4d8p6' | chpasswd
+      ansible.builtin.user:
+        name: root
+        password: "{{ 'f4x4d8p6' | password_hash('sha512') }}"
 
-    - name: Remove gnome-power-manager, evince, and gnome-logs
+    - name: Remove unwanted GNOME packages
       ansible.builtin.apt:
         name:
           - gnome-power-manager
@@ -147,23 +133,20 @@
           - gnome-logs
         state: absent
 
+    - name: Autoremove orphaned packages
+      ansible.builtin.apt:
+        autoremove: yes
+        purge: yes
+
     - name: Install Fish shell
       ansible.builtin.apt:
         name: fish
         state: present
 
-    - name: Set Fish as default shell for specific user
-      ansible.builtin.shell: |
-        chsh -s /usr/bin/fish dhiego
-      args:
-        executable: /bin/bash
-
-    - name: Configure Fish shell as default at startup
-      ansible.builtin.lineinfile:
-        path: /etc/passwd
-        regexp: '^(.*?):(.*?):(.*?):(.*?):(.*?):(.*?):/bin/bash$'
-        line: '\1:\2:\3:\4:\5:\6:/usr/bin/fish'
-        state: present
+    - name: Set Fish as default shell for user dhiego
+      ansible.builtin.user:
+        name: dhiego
+        shell: /usr/bin/fish
 
     - name: Install GNOME Software
       ansible.builtin.apt:
@@ -180,7 +163,7 @@
         repo: ppa:kisak/kisak-mesa
         state: present
 
-    - name: Update apt cache
+    - name: Update apt cache after adding PPA
       ansible.builtin.apt:
         update_cache: yes
 
