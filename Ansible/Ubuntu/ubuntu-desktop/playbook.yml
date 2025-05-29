@@ -3,21 +3,6 @@
   become: true
   tasks:
 
-    - name: Set IP address, gateway, and DNS settings
-      ansible.builtin.copy:
-        content: |
-          network:
-            version: 2
-            ethernets:
-              enp0s3:
-                dhcp4: no
-                addresses: [192.168.0.100/24]
-                gateway4: 192.168.0.1
-                nameservers:
-                  addresses: [192.168.0.33]
-        dest: /etc/netplan/01-netcfg.yaml
-      notify: Apply network changes
-
     - name: Check if snap is installed
       ansible.builtin.stat:
         path: /usr/bin/snap
@@ -184,6 +169,23 @@
       ansible.builtin.apt:
         name: preload
         state: present
+
+    # ===== Added section for GNOME logout prompt setting =====
+    - name: Check if GNOME session bus is running
+      ansible.builtin.stat:
+        path: "/run/user/{{ lookup('ansible.builtin.pipe', 'id -u dhiego') }}/bus"
+      register: gnome_session_bus
+
+    - name: Disable logout prompt in GNOME for user dhiego
+      ansible.builtin.shell: |
+        export DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$(id -u dhiego)/bus"
+        sudo -u dhiego gsettings set org.gnome.SessionManager logout-prompt false
+      args:
+        executable: /bin/bash
+      become: false
+      when: gnome_session_bus.stat.exists
+      ignore_errors: true
+    # =======================================================
 
   handlers:
     - name: Apply network changes
