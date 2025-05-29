@@ -64,6 +64,18 @@
         state: present
         update_cache: yes
 
+    - name: Configure Git user name
+      ansible.builtin.command: git config --global user.name "Dhiego Silva"
+      args:
+        creates: /home/dhiego/.gitconfig
+      become: false
+
+    - name: Configure Git user email
+      ansible.builtin.command: git config --global user.email "dhiego.silva@hotmail.com"
+      args:
+        creates: /home/dhiego/.gitconfig
+      become: false
+
     - name: Install flatpak
       ansible.builtin.apt:
         name: flatpak
@@ -87,6 +99,7 @@
         - { id: org.gnome.meld }
         - { id: io.dbeaver.DBeaverCommunity }
         - { id: org.remmina.Remmina }
+        - { id: com.ultimaker.cura }
 
     - name: Install Visual Studio Code via .deb package
       ansible.builtin.shell: |
