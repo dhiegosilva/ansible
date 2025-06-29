@@ -1,0 +1,114 @@
+#cloud-config
+autoinstall:
+  version: 1
+  identity:
+    hostname: ubuntu
+    username: dhiego
+    password: "$6$SALT$Q6Khfs2Z5vugvIQ4STGSN/uzkmTULeLUVJ6A5ZlVXUcbT9jaMctfs6u0E1rtdynkDNPA5Xur3wA52ZVe.C2CJ0"  # password 'f4x4d8p6'
+
+  storage:
+    layout:
+      name: direct
+    config:
+      - id: nvme-disk
+        type: disk
+        ptable: gpt
+        path: /dev/nvme0n1
+        wipe: superblock-recursive
+        grub_device: true
+      - type: partition
+        id: root-partition
+        device: nvme-disk
+        size: -1
+        flag: boot
+      - type: format
+        id: btrfs-format
+        volume: root-partition
+        fstype: btrfs
+      - type: mount
+        id: root-mount
+        device: btrfs-format
+        path: /
+        options: compress=zstd
+
+  late-commands:
+    - curtin in-target --target=/target -- swapoff -a || true
+    - curtin in-target --target=/target -- sed -i '/swap/d' /etc/fstab
+    - curtin in-target --target=/target -- rm -f /swapfile
+
+    - curtin in-target --target=/target -- apt update
+    - curtin in-target --target=/target -- apt dist-upgrade -y
+    - curtin in-target --target=/target -- apt install -y git flatpak fish tilix zram-tools software-properties-common wget gpg
+
+    - curtin in-target --target=/target -- snap remove --purge $(snap list | awk 'NR>1{print $1}' | grep -Ev 'core|snapd') || true
+    - curtin in-target --target=/target -- snap remove --purge snapd-desktop-integration snap-store core20 core22 || true
+    - curtin in-target --target=/target -- apt purge -y snapd
+
+    - curtin in-target --target=/target -- apt purge -y gnome-power-manager evince gnome-logs
+
+    - curtin in-target --target=/target -- wget -qO /usr/share/keyrings/xanmod-archive-keyring.gpg https://dl.xanmod.org/gpg.key
+    - curtin in-target --target=/target -- bash -c 'echo "deb [signed-by=/usr/share/keyrings/xanmod-archive-keyring.gpg arch=amd64] http://deb.xanmod.org releases main" > /etc/apt/sources.list.d/xanmod-kernel.list'
+    - curtin in-target --target=/target -- apt update
+    - curtin in-target --target=/target -- apt install -y linux-xanmod-edge-x64v3
+
+    - curtin in-target --target=/target -- wget -qO- https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor > /usr/share/keyrings/packages.microsoft.gpg
+    - curtin in-target --target=/target -- bash -c 'echo "deb [arch=amd64 signed-by=/usr/share/keyrings/packages.microsoft.gpg] https://packages.microsoft.com/repos/code stable main" > /etc/apt/sources.list.d/vscode.list'
+    - curtin in-target --target=/target -- apt update
+    - curtin in-target --target=/target -- apt install -y code
+
+    - curtin in-target --target=/target -- add-apt-repository -y ppa:kisak/kisak-mesa
+    - curtin in-target --target=/target -- apt update
+
+    - curtin in-target --target=/target -- flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+    - curtin in-target --target=/target -- flatpak install -y flathub com.brave.Browser io.github.peazip.PeaZip com.github.tchx84.Flatseal org.videolan.VLC org.gnome.meld io.dbeaver.DBeaverCommunity org.remmina.Remmina com.ultimaker.cura
+
+    - curtin in-target --target=/target -- bash -c 'echo -e "#!/usr/bin/env bash\nflatpak update -y >> /var/log/flatpak-update.log 2>&1" > /usr/local/bin/flatpak-auto-update.sh'
+    - curtin in-target --target=/target -- chmod +x /usr/local/bin/flatpak-auto-update.sh
+
+    - |
+      curtin in-target --target=/target -- bash -c '
+      cat > /etc/systemd/system/flatpak-auto-update.service <<EOF
+[Unit]
+Description=Flatpak auto-update at boot and weekly
+Wants=network-online.target
+After=network-online.target
+ConditionNetworkOnline=yes
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/flatpak-auto-update.sh
+StandardOutput=journal
+StandardError=journal
+EOF
+'
+
+    - |
+      curtin in-target --target=/target -- bash -c '
+      cat > /etc/systemd/system/flatpak-auto-update.timer <<EOF
+[Unit]
+Description=Run Flatpak auto-update at boot and weekly
+
+[Timer]
+OnBootSec=2min
+OnCalendar=weekly
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+EOF
+'
+
+    - curtin in-target --target=/target -- systemctl enable flatpak-auto-update.timer
+
+    - curtin in-target --target=/target -- sudo -u dhiego git config --global user.name "Dhiego Silva"
+    - curtin in-target --target=/target -- sudo -u dhiego git config --global user.email "dhiego.silva@hotmail.com"
+
+    - curtin in-target --target=/target -- sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config
+    - curtin in-target --target=/target -- sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config
+    - curtin in-target --target=/target -- systemctl restart ssh
+
+    - curtin in-target --target=/target -- bash -c 'echo root:f4x4d8p6 | chpasswd'
+
+    - curtin in-target --target=/target -- chsh -s /usr/bin/fish dhiego
+
+    - curtin in-target --target=/target -- apt autoremove --purge -y
