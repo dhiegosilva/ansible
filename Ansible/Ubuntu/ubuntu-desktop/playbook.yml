@@ -127,9 +127,15 @@
       when: snap_check.stat.exists
 
     # ===== Kisak Mesa PPA cleanup =====
-    - name: Remove Kisak PPA on unsupported releases
+    - name: Remove Kisak PPA .list on unsupported releases
       file:
         path: /etc/apt/sources.list.d/kisak-ubuntu-kisak-mesa-*.list
+        state: absent
+      when: ansible_distribution_release == "plucky"
+
+    - name: Remove Kisak PPA .sources on unsupported releases
+      file:
+        path: /etc/apt/sources.list.d/kisak-ubuntu-kisak-mesa-*.sources
         state: absent
       when: ansible_distribution_release == "plucky"
 
@@ -148,8 +154,9 @@
         name: git
         state: present
 
-    - name: Configure Git user
-      become: false
+    - name: Configure Git user for dhiego
+      become: true
+      become_user: dhiego
       git_config:
         scope: global
         name: '{{ item.name }}'
@@ -361,7 +368,31 @@
 
     - name: Update GRUB if configuration changed
       command: update-grub
+      register: grub_update
       when: grub_timeout_changed.changed or grub_cmdline_changed.changed
+
+    - name: Reboot if GRUB updated
+      reboot:
+        msg: "Rebooting system to apply new GRUB configuration..."
+        pre_reboot_delay: 5
+      when: grub_update.changed
+
+    # ===== Btrfs Compression =====
+    - name: Ensure Btrfs mounts in /etc/fstab have compress=zstd
+      replace:
+        path: /etc/fstab
+        regexp: '(\s+defaults[^\s]*)'
+        replace: '\1,compress=zstd'
+      register: fstab_btrfs
+
+    - name: Remount Btrfs filesystems if fstab changed
+      command: mount -a -t btrfs
+      when: fstab_btrfs.changed
+
+    - name: Compress existing data on Btrfs root
+      command: btrfs filesystem defragment -r -czstd /
+      register: btrfs_defrag
+      changed_when: "'Processed' in btrfs_defrag.stdout or btrfs_defrag.rc == 0"
 
   handlers:
     - name: Apply network changes
