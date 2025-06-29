@@ -24,43 +24,53 @@
         state: absent
 
     # ===== XanMod repository and kernel =====
+    - name: Check if XanMod kernel is already installed
+      shell: dpkg -l linux-xanmod-edge-x64v3
+      register: xanmod_check
+      ignore_errors: true
+
     - name: Remove legacy XanMod key
       file:
         path: /usr/share/keyrings/xanmod.gpg
         state: absent
+      when: xanmod_check.rc != 0
 
     - name: Remove legacy XanMod source list
       file:
         path: /etc/apt/sources.list.d/xanmod-release.list
         state: absent
+      when: xanmod_check.rc != 0
 
     - name: Remove existing XanMod source list
       file:
         path: /etc/apt/sources.list.d/xanmod-kernel.list
         state: absent
+      when: xanmod_check.rc != 0
 
-    - name: Ensure XanMod GPG key is present
-      get_url:
-        url: https://dl.xanmod.org/gpg.key
-        dest: /usr/share/keyrings/xanmod-archive-keyring.gpg
-        mode: '0644'
-      register: xanmod_key
-      until: xanmod_key is succeeded
-      retries: 3
-      delay: 5
+    - name: Download and install XanMod GPG key as per official instructions
+      shell: |
+        wget -qO - https://dl.xanmod.org/archive.key | gpg --dearmor -o /etc/apt/keyrings/xanmod-archive-keyring.gpg
+      args:
+        creates: /etc/apt/keyrings/xanmod-archive-keyring.gpg
+      when: xanmod_check.rc != 0
 
-    - name: Ensure XanMod apt repository
-      apt_repository:
-        filename: xanmod-kernel
-        repo: "deb [signed-by=/usr/share/keyrings/xanmod-archive-keyring.gpg arch=amd64] http://deb.xanmod.org releases main"
-        state: present
+    - name: Add XanMod repository using signed-by in sources.list.d
+      copy:
+        dest: /etc/apt/sources.list.d/xanmod-release.list
+        content: |
+          deb [signed-by=/etc/apt/keyrings/xanmod-archive-keyring.gpg] http://deb.xanmod.org releases main
+      when: xanmod_check.rc != 0
+
+    - name: Update apt cache after adding XanMod repository
+      apt:
         update_cache: yes
-      when: xanmod_key.changed
+      when: xanmod_check.rc != 0
 
     - name: Install XanMod edge x64v3 kernel
       apt:
         name: linux-xanmod-edge-x64v3
         state: present
+      when: xanmod_check.rc != 0
 
     # ===== ZRAM setup =====
     - name: Install zram-tools
@@ -115,6 +125,13 @@
         name: snapd
         state: absent
       when: snap_check.stat.exists
+
+    # ===== Kisak Mesa PPA cleanup =====
+    - name: Remove Kisak PPA on unsupported releases
+      file:
+        path: /etc/apt/sources.list.d/kisak-ubuntu-kisak-mesa-*.list
+        state: absent
+      when: ansible_distribution_release == "plucky"
 
     # ===== APT updates =====
     - name: Update apt cache
@@ -251,11 +268,12 @@
         name: dhiego
         shell: /usr/bin/fish
 
-    # ===== Kisak Mesa PPA (using add-apt-repository instead of apt-key) =====
+    # ===== Kisak Mesa PPA =====
     - name: Add Kisak Mesa PPA with add-apt-repository
       command: add-apt-repository -y ppa:kisak/kisak-mesa
       args:
         creates: /etc/apt/sources.list.d/kisak-ubuntu-kisak-mesa-*.list
+      when: ansible_distribution_release != "plucky"
 
     # ===== Tilix =====
     - name: Install Tilix
@@ -325,6 +343,25 @@
         name: flatpak-auto-update.timer
         enabled: yes
         state: started
+
+    # ===== GRUB Configuration =====
+    - name: Set GRUB_TIMEOUT to 2 seconds
+      lineinfile:
+        path: /etc/default/grub
+        regexp: '^GRUB_TIMEOUT='
+        line: 'GRUB_TIMEOUT=2'
+      register: grub_timeout_changed
+
+    - name: Add mitigations=off to GRUB_CMDLINE_LINUX_DEFAULT
+      lineinfile:
+        path: /etc/default/grub
+        regexp: '^GRUB_CMDLINE_LINUX_DEFAULT='
+        line: 'GRUB_CMDLINE_LINUX_DEFAULT="quiet splash mitigations=off"'
+      register: grub_cmdline_changed
+
+    - name: Update GRUB if configuration changed
+      command: update-grub
+      when: grub_timeout_changed.changed or grub_cmdline_changed.changed
 
   handlers:
     - name: Apply network changes
