@@ -8,8 +8,15 @@
   tasks:
 
     # ===== Swap removal =====
-    - name: Disable swap
+    - name: Check if swap is active
+      command: swapon --summary
+      register: swap_summary
+      changed_when: false
+      failed_when: false
+
+    - name: Disable swap if active
       command: swapoff -a
+      when: swap_summary.stdout != ""
       ignore_errors: true
 
     - name: Remove swap entry from fstab
@@ -18,7 +25,7 @@
         regexp: '^\s*([^#]\S+)\s+\S+\s+swap\s'
         state: absent
 
-    - name: Remove swapfile
+    - name: Remove swapfile if exists
       file:
         path: /swapfile
         state: absent
@@ -47,14 +54,14 @@
         state: absent
       when: xanmod_check.rc != 0
 
-    - name: Download and install XanMod GPG key as per official instructions
+    - name: Download and install XanMod GPG key
       shell: |
         wget -qO - https://dl.xanmod.org/archive.key | gpg --dearmor -o /etc/apt/keyrings/xanmod-archive-keyring.gpg
       args:
         creates: /etc/apt/keyrings/xanmod-archive-keyring.gpg
       when: xanmod_check.rc != 0
 
-    - name: Add XanMod repository using signed-by in sources.list.d
+    - name: Add XanMod repository
       copy:
         dest: /etc/apt/sources.list.d/xanmod-release.list
         content: |
@@ -97,33 +104,34 @@
         path: /usr/bin/snap
       register: snap_check
 
-    - name: Stop snapd
-      systemd:
-        name: snapd
-        state: stopped
-        enabled: no
-      when: snap_check.stat.exists
+    - name: Remove snap ecosystem if present
+      block:
 
-    - name: Remove non-core snaps
-      shell: |
-        for s in $(snap list | awk 'NR>1{print $1}' | grep -Ev 'core|snapd'); do
-          snap remove --purge "$s" || true
-        done
-      when: snap_check.stat.exists
-      ignore_errors: true
+        - name: Stop snapd
+          systemd:
+            name: snapd
+            state: stopped
+            enabled: no
 
-    - name: Remove core snaps
-      shell: |
-        for c in snapd-desktop-integration snap-store core20 core22; do
-          snap remove --purge "$c" || true
-        done
-      when: snap_check.stat.exists
-      ignore_errors: true
+        - name: Remove non-core snaps
+          shell: |
+            for s in $(snap list | awk 'NR>1{print $1}' | grep -Ev 'core|snapd'); do
+              snap remove --purge "$s" || true
+            done
+          ignore_errors: true
 
-    - name: Purge snapd
-      apt:
-        name: snapd
-        state: absent
+        - name: Remove core snaps
+          shell: |
+            for c in snapd-desktop-integration snap-store core20 core22; do
+              snap remove --purge "$c" || true
+            done
+          ignore_errors: true
+
+        - name: Purge snapd
+          apt:
+            name: snapd
+            state: absent
+
       when: snap_check.stat.exists
 
     # ===== Kisak Mesa PPA cleanup =====
@@ -140,13 +148,12 @@
       when: ansible_distribution_release == "plucky"
 
     # ===== APT updates =====
-    - name: Update apt cache
+    - name: Update and upgrade packages
       apt:
         update_cache: yes
-
-    - name: Dist-upgrade
-      apt:
+        cache_valid_time: 3600
         upgrade: dist
+        autoremove: yes
 
     # ===== Git =====
     - name: Install Git
@@ -258,11 +265,6 @@
           - evince
           - gnome-logs
         state: absent
-
-    - name: Autoremove
-      apt:
-        autoremove: yes
-        purge: yes
 
     # ===== Fish shell =====
     - name: Install Fish
@@ -376,23 +378,6 @@
         msg: "Rebooting system to apply new GRUB configuration..."
         pre_reboot_delay: 5
       when: grub_update.changed
-
-    # ===== Btrfs Compression =====
-    - name: Ensure Btrfs mounts in /etc/fstab have compress=zstd
-      replace:
-        path: /etc/fstab
-        regexp: '(\s+defaults[^\s]*)'
-        replace: '\1,compress=zstd'
-      register: fstab_btrfs
-
-    - name: Remount Btrfs filesystems if fstab changed
-      command: mount -a -t btrfs
-      when: fstab_btrfs.changed
-
-    - name: Compress existing data on Btrfs root
-      command: btrfs filesystem defragment -r -czstd /
-      register: btrfs_defrag
-      changed_when: "'Processed' in btrfs_defrag.stdout or btrfs_defrag.rc == 0"
 
   handlers:
     - name: Apply network changes
