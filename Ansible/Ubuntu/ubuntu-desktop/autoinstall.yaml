@@ -64,6 +64,10 @@ autoinstall:
 
     - curtin in-target --target=/target -- bash -c 'echo -e "#!/usr/bin/env bash\nflatpak update -y >> /var/log/flatpak-update.log 2>&1" > /usr/local/bin/flatpak-auto-update.sh'
     - curtin in-target --target=/target -- chmod +x /usr/local/bin/flatpak-auto-update.sh
+    - curtin in-target --target=/target -- sed -i 's/^#Storage=.*/Storage=volatile/' /etc/systemd/journald.conf
+    - curtin in-target --target=/target -- systemctl restart systemd-journald
+    - curtin in-target --target=/target -- sed -i 's/\(compress=zstd\)/\1,noatime/' /etc/fstab
+
 
     - |
       curtin in-target --target=/target -- bash -c '
