@@ -46,6 +46,8 @@
         - io.dbeaver.DBeaverCommunity
         - org.remmina.Remmina
         - com.ultimaker.cura
+        - com.valvesoftware.Steam             # Steam
+        - org.gnome.Tweaks                    # GNOME Tweaks
       args:
         creates: '/var/lib/flatpak/app/{{ item }}'
 
@@ -119,6 +121,12 @@
           - gnome-weather
           - gnome-boxes
         state: absent
+
+    # ===== Steam devices udev rules =====
+    - name: Install steam-devices for gamepad support with Steam
+      dnf:
+        name: steam-devices
+        state: present
 
     # ===== Fish shell =====
     - name: Install Fish
@@ -225,4 +233,3 @@
         msg: "Rebooting system to apply new GRUB configuration..."
         pre_reboot_delay: 5
       when: grub_update.changed
-
