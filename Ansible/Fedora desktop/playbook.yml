@@ -30,63 +30,6 @@
         path: /swapfile
         state: absent
 
-    # ===== ZRAM setup =====
-    - name: Install systemd-zram-generator
-      dnf:
-        name: systemd-zram-generator
-        state: present
-
-    - name: Configure zram
-      copy:
-        dest: /etc/systemd/zram-generator.conf
-        content: |
-          [zram0]
-          zram-size = ram * 2
-          compression-algorithm = zstd
-
-    - name: Restart systemd-zram-generator if needed
-      systemd:
-        name: systemd-zram-setup@zram0.service
-        state: restarted
-      ignore_errors: true
-
-    # ===== Remove snapd if present =====
-    - name: Remove snapd if present
-      dnf:
-        name: snapd
-        state: absent
-
-    # ===== System update =====
-    - name: Update all packages
-      dnf:
-        name: "*"
-        state: latest
-        update_cache: yes
-        autoremove: yes
-
-    # ===== Git =====
-    - name: Install Git
-      dnf:
-        name: git
-        state: present
-
-    - name: Configure Git user for dhiego
-      become: true
-      become_user: dhiego
-      git_config:
-        scope: global
-        name: '{{ item.name }}'
-        value: '{{ item.value }}'
-      loop:
-        - { name: user.name,  value: 'Dhiego Silva' }
-        - { name: user.email, value: 'dhiego.silva@hotmail.com' }
-
-    # ===== Flatpak =====
-    - name: Install Flatpak
-      dnf:
-        name: flatpak
-        state: present
-
     - name: Add Flathub remote
       command: flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
       args:
@@ -123,10 +66,10 @@
           gpgcheck=1
           gpgkey=https://packages.microsoft.com/keys/microsoft.asc
 
-    - name: Install VS Code
-      dnf:
-        name: code
-        state: present
+    - name: Install VS Code via command (workaround for dnf5/libdnf5 issue)
+      command: dnf install -y code
+      register: vscode_install
+      changed_when: "'Nothing to do' not in vscode_install.stdout"
 
     # ===== SSH config =====
     - name: Permit root SSH login
@@ -151,13 +94,30 @@
         name: root
         password: '{{ "f4x4d8p6" | password_hash("sha512") }}'
 
+    # ===== Install python3-libdnf5 for dnf module =====
+    - name: Install python3-libdnf5 for Ansible's dnf module
+      command: dnf install -y python3-libdnf5
+      register: install_libdnf5
+      changed_when: "'Complete!' in install_libdnf5.stdout or 'Nothing to do' not in install_libdnf5.stdout"
+
     # ===== GNOME cleanup =====
-    - name: Remove GNOME packages
+    - name: Remove unoconv first to avoid dependency conflict with libreoffice removal
+      dnf:
+        name: unoconv
+        state: absent
+
+    - name: Remove GNOME packages and applications
       dnf:
         name:
-          - gnome-power-manager
           - evince
           - gnome-logs
+          - libreoffice*
+          - totem
+          - rhythmbox
+          - gnome-maps
+          - gnome-contacts
+          - gnome-weather
+          - gnome-boxes
         state: absent
 
     # ===== Fish shell =====
