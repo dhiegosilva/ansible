@@ -46,8 +46,8 @@
         - io.dbeaver.DBeaverCommunity
         - org.remmina.Remmina
         - com.ultimaker.cura
-        - com.valvesoftware.Steam             # Steam
-        - org.gnome.Tweaks                    # GNOME Tweaks
+        - com.valvesoftware.Steam
+        - org.gnome.Tweaks
       args:
         creates: '/var/lib/flatpak/app/{{ item }}'
 
@@ -228,8 +228,58 @@
       register: grub_update
       when: grub_timeout_changed.changed or grub_cmdline_changed.changed
 
-    - name: Reboot if GRUB updated
-      reboot:
-        msg: "Rebooting system to apply new GRUB configuration..."
-        pre_reboot_delay: 5
-      when: grub_update.changed
+    # ===== GNOME Extensions: Dash-to-Dock =====
+    - name: Install Dash-to-Dock GNOME extension
+      become: false
+      shell: |
+        set -e
+        EXT_ID=307
+        GNOME_SHELL_VER=$(gnome-shell --version | grep -oE '[0-9]+' | head -1)
+        INFO=$(curl -s "https://extensions.gnome.org/extension-info/?pk=${EXT_ID}&shell_version=${GNOME_SHELL_VER}")
+        UUID=$(echo "$INFO" | grep -oP '"uuid":\s*"\K[^"]+')
+        DOWNLOAD_URL=$(echo "$INFO" | grep -oP '"download_url":\s*"\K[^"]+')
+        if [[ -z "$UUID" || -z "$DOWNLOAD_URL" ]]; then
+          echo "Extension not available for GNOME Shell ${GNOME_SHELL_VER}" >&2
+          exit 1
+        fi
+        ZIPURL="https://extensions.gnome.org${DOWNLOAD_URL}"
+        TMPZIP="/tmp/${UUID}.zip"
+        curl -L -o "$TMPZIP" "$ZIPURL"
+        gnome-extensions install --force "$TMPZIP"
+        gnome-extensions enable "$UUID"
+      args:
+        executable: /bin/bash
+      environment:
+        DISPLAY: ":0"
+        XAUTHORITY: "/home/dhiego/.Xauthority"
+      become_user: dhiego
+      register: gnome_ext_dash
+      changed_when: "'Installed & enabled' in gnome_ext_dash.stdout"
+
+    # ===== GNOME Extensions: Burn My Windows =====
+    - name: Install Burn My Windows GNOME extension
+      become: false
+      shell: |
+        set -e
+        EXT_ID=4679
+        GNOME_SHELL_VER=$(gnome-shell --version | grep -oE '[0-9]+' | head -1)
+        INFO=$(curl -s "https://extensions.gnome.org/extension-info/?pk=${EXT_ID}&shell_version=${GNOME_SHELL_VER}")
+        UUID=$(echo "$INFO" | grep -oP '"uuid":\s*"\K[^"]+')
+        DOWNLOAD_URL=$(echo "$INFO" | grep -oP '"download_url":\s*"\K[^"]+')
+        if [[ -z "$UUID" || -z "$DOWNLOAD_URL" ]]; then
+          echo "Extension not available for GNOME Shell ${GNOME_SHELL_VER}" >&2
+          exit 1
+        fi
+        ZIPURL="https://extensions.gnome.org${DOWNLOAD_URL}"
+        TMPZIP="/tmp/${UUID}.zip"
+        curl -L -o "$TMPZIP" "$ZIPURL"
+        gnome-extensions install --force "$TMPZIP"
+        gnome-extensions enable "$UUID"
+      args:
+        executable: /bin/bash
+      environment:
+        DISPLAY: ":0"
+        XAUTHORITY: "/home/dhiego/.Xauthority"
+      become_user: dhiego
+      register: gnome_ext_burn
+      changed_when: "'Installed & enabled' in gnome_ext_burn.stdout"
