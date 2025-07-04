@@ -283,3 +283,31 @@
       become_user: dhiego
       register: gnome_ext_burn
       changed_when: "'Installed & enabled' in gnome_ext_burn.stdout"
+
+    # ===== GNOME Extensions: OpenWeather =====
+    - name: Install OpenWeather GNOME extension
+      become: false
+      shell: |
+        set -e
+        EXT_ID=750
+        GNOME_SHELL_VER=$(gnome-shell --version | grep -oE '[0-9]+' | head -1)
+        INFO=$(curl -s "https://extensions.gnome.org/extension-info/?pk=${EXT_ID}&shell_version=${GNOME_SHELL_VER}")
+        UUID=$(echo "$INFO" | grep -oP '"uuid":\s*"\K[^"]+')
+        DOWNLOAD_URL=$(echo "$INFO" | grep -oP '"download_url":\s*"\K[^"]+')
+        if [[ -z "$UUID" || -z "$DOWNLOAD_URL" ]]; then
+          echo "Extension not available for GNOME Shell ${GNOME_SHELL_VER}" >&2
+          exit 1
+        fi
+        ZIPURL="https://extensions.gnome.org${DOWNLOAD_URL}"
+        TMPZIP="/tmp/${UUID}.zip"
+        curl -L -o "$TMPZIP" "$ZIPURL"
+        gnome-extensions install --force "$TMPZIP"
+        gnome-extensions enable "$UUID"
+      args:
+        executable: /bin/bash
+      environment:
+        DISPLAY: ":0"
+        XAUTHORITY: "/home/dhiego/.Xauthority"
+      become_user: dhiego
+      register: gnome_ext_openweather
+      changed_when: "'Installed & enabled' in gnome_ext_openweather.stdout"
