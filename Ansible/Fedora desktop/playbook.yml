@@ -1,4 +1,4 @@
-- name: Configure Fedora 42 Environment
+- name: Configure Fedora 42 Environment AMD laptop
   hosts: all
   become: true
   vars:
@@ -120,7 +120,48 @@
           - gnome-contacts
           - gnome-weather
           - gnome-boxes
+          - 'abrt-addon-*'
+          - 'abrt-cli'
+          - 'abrt-desktop'
+          - 'abrt-dbus'
+          - 'abrt-gui*'
+          - 'abrt-tui'
+          - 'abrt-plugin-bodhi'
+          - gnome-abrt
+          - 'brltty*'
+          - 'speech-dispatcher*'
+          - espeak-ng
+          - orca
+          - brcmfmac-firmware
+          - cirrus-audio-firmware
+          - intel-audio-firmware
+          - intel-gpu-firmware
+          - intel-vsc-firmware
+          - iwlegacy-firmware
+          - iwlwifi-dvm-firmware
+          - libertas-firmware
+          - mt7xxx-firmware
+          - nxpwireless-firmware
+          - realtek-firmware
+          - tiwilink-firmware
+          - 'open-vm-tools*'
+          - qemu-guest-agent
+          - spice-vdagent
+          - spice-webdavd
+          - rygel
+          - gnome-tour
+          - gnome-clocks
+          - gnome-connections
+          - gnome-user-docs
+          - 'anaconda*'
+          - 'python3-meh*'
+          - ModemManager
+          - pcsc-lite
+          - fwupd
+          - sssd-kcm
+          - snapshot
         state: absent
+        allowerasing: yes
 
     # ===== Steam devices udev rules =====
     - name: Install steam-devices for gamepad support with Steam
