@@ -380,3 +380,36 @@
       become_user: dhiego
       register: gnome_ext_nooverview
       changed_when: "'Installed & enabled' in gnome_ext_nooverview.stdout"
+
+    - name: Set I/O scheduler to mq-deadline for NVMe device
+      copy:
+        dest: /etc/udev/rules.d/60-ioschedulers.rules
+        content: |
+          ACTION=="add|change", KERNEL=="nvme0n1", ATTR{queue/scheduler}="mq-deadline"
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Reload udev rules to apply I/O scheduler
+      command: udevadm control --reload-rules
+
+    - name: Configure sysctl settings for fq and bbr
+      copy:
+        dest: /etc/sysctl.d/99-network-performance.conf
+        content: |
+          net.core.default_qdisc = fq
+          net.ipv4.tcp_congestion_control = bbr
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Apply sysctl settings
+      command: sysctl --system
+    
+    - name: Show current TCP congestion control algorithm
+      command: sysctl net.ipv4.tcp_congestion_control
+      register: tcp_cc
+
+    - name: Print TCP congestion control
+      debug:
+        var: tcp_cc.stdout
