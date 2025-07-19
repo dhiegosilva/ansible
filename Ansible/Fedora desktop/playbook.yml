@@ -257,12 +257,12 @@
         line: 'GRUB_TIMEOUT=2'
       register: grub_timeout_changed
 
-    - name: Add mitigations=off to GRUB_CMDLINE_LINUX_DEFAULT
+    - name: Set optimized GRUB_CMDLINE_LINUX_DEFAULT for performance
       lineinfile:
         path: /etc/default/grub
         regexp: '^GRUB_CMDLINE_LINUX_DEFAULT='
-        line: 'GRUB_CMDLINE_LINUX_DEFAULT="quiet splash mitigations=off"'
-      register: grub_cmdline_changed
+        line: 'GRUB_CMDLINE_LINUX_DEFAULT="quiet splash mitigations=off nowatchdog nosoftlockup amd_pstate=active pcie_aspm=performance"'
+
 
     - name: Update GRUB if configuration changed
       command: grub2-mkconfig -o /boot/grub2/grub.cfg
@@ -413,3 +413,60 @@
     - name: Print TCP congestion control
       debug:
         var: tcp_cc.stdout
+
+        # ===== Bluetooth SBC XQ Max Quality (WirePlumber) =====
+    - name: Ensure bluetooth.lua.d override directory exists
+      file:
+        path: /etc/wireplumber/bluetooth.lua.d
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+
+    - name: Configure SBC XQ to use only maximum bitpool (53) in WirePlumber
+      copy:
+        dest: /etc/wireplumber/bluetooth.lua.d/51-bluez-config.lua
+        owner: root
+        group: root
+        mode: '0644'
+        content: |
+          bluez_monitor.properties = {
+            ["bluez5.enable-sbc-xq"] = true,
+            ["bluez5.sbc-xq-min-bitpool"] = 53,
+            ["bluez5.sbc-xq-max-bitpool"] = 53,
+          }
+
+    - name: Restart WirePlumber for Bluetooth config changes
+      systemd:
+        name: wireplumber
+        state: restarted
+        scope: user
+
+    - name: Restart PipeWire (including PulseAudio) for Bluetooth config changes
+      systemd:
+        name: pipewire
+        state: restarted
+        scope: user
+
+    - name: Restart PipeWire Pulse bridge for Bluetooth config changes
+      systemd:
+        name: pipewire-pulse
+        state: restarted
+        scope: user
+    
+    - name: Install dnf-automatic package
+      dnf:
+        name: dnf-automatic
+        state: present
+
+    - name: Configure dnf-automatic for automatic installation of updates
+      lineinfile:
+        path: /etc/dnf/automatic.conf
+        regexp: '^apply_updates ='
+        line: 'apply_updates = yes'
+
+    - name: Ensure dnf-automatic.timer is enabled and started
+      systemd:
+        name: dnf-automatic.timer
+        enabled: true
+        state: started
