@@ -1,42 +1,93 @@
-- name: Configure Fedora 42 Environment AMD laptop
+- name: Configure Fedora 42 Environment AMD laptop (zRAM-only swap)
   hosts: all
   become: true
   vars:
     flatpak_update_script: /usr/local/bin/flatpak-auto-update.sh
-    flatpak_update_log: /var/log/flatpak-update.log
 
   tasks:
 
-    # ===== Swap removal =====
-    - name: Check if swap is active
-      command: swapon --summary
-      register: swap_summary
+    # ===== Swap: keep ONLY zRAM enabled =====
+    - name: List active non-zram swap devices/files
+      ansible.builtin.shell: |
+        swapon --noheadings --show=NAME,TYPE 2>/dev/null | awk '$2 != "zram" {print $1}'
+      register: nonzram_swaps
       changed_when: false
       failed_when: false
 
-    - name: Disable swap if active
-      command: swapoff -a
-      when: swap_summary.stdout != ""
-      ignore_errors: true
+    - name: Disable non-zram swaps (leave zram enabled)
+      ansible.builtin.command: swapoff {{ item }}
+      loop: "{{ nonzram_swaps.stdout_lines }}"
+      when: nonzram_swaps.stdout != ""
 
-    - name: Remove swap entry from fstab
-      lineinfile:
+    - name: Remove any swap entry from fstab (prevents disk swap)
+      ansible.builtin.lineinfile:
         path: /etc/fstab
         regexp: '^\s*([^#]\S+)\s+\S+\s+swap\s'
         state: absent
 
-    - name: Remove swapfile if exists
-      file:
+    - name: Ensure no disk swapfile exists
+      ansible.builtin.file:
         path: /swapfile
         state: absent
 
+    - name: Ensure systemd-zram-generator is installed
+      ansible.builtin.dnf:
+        name: systemd-zram-generator
+        state: present
+
+    - name: Configure zram (RAM x2, zstd compression)
+      ansible.builtin.copy:
+        dest: /etc/systemd/zram-generator.conf
+        owner: root
+        group: root
+        mode: '0644'
+        content: |
+          [zram0]
+          # Allocate zRAM twice the size of physical RAM
+          zram-size = ram * 2
+          compression-algorithm = zstd
+          swap-priority = 100
+
+    - name: Reload systemd units after zram config
+      ansible.builtin.systemd:
+        daemon_reload: true
+
+    # Try modern unit first; don't fail the play if it's missing
+    - name: Start zram swap (dev-zram0.swap)
+      ansible.builtin.systemd:
+        name: dev-zram0.swap
+        state: started
+        enabled: true
+      register: devzram_result
+      failed_when: false
+
+    - name: Verify zram is active
+      ansible.builtin.shell: swapon --noheadings --show=NAME,TYPE | awk '$2=="zram"{print $1}'
+      register: zram_active
+      changed_when: false
+
+    - name: Fail if no zram swap is active
+      ansible.builtin.fail:
+        msg: "zRAM not active after attempting to start dev-zram0.swap and systemd-zram-setup@zram0."
+      when: zram_active.stdout == ""
+
+    # ===== Flatpak base =====
+    - name: Ensure flatpak is installed
+      ansible.builtin.dnf:
+        name: flatpak
+        state: present
+
     - name: Add Flathub remote
-      command: flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+      ansible.builtin.command: flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
       args:
         creates: /var/lib/flatpak/repo/flathub
 
+    # ===== Flatpak apps via module (no logging) =====
     - name: Install Flatpak apps
-      command: flatpak install -y flathub {{ item }}
+      community.general.flatpak:
+        name: "{{ item }}"
+        state: present
+        remote: flathub
       loop:
         - com.brave.Browser
         - io.github.peazip.PeaZip
@@ -48,18 +99,16 @@
         - com.ultimaker.cura
         - com.valvesoftware.Steam
         - org.gnome.Tweaks
-        - org.gimp.GIMP                # ← added GIMP
-      args:
-        creates: '/var/lib/flatpak/app/{{ item }}'
+        - org.gimp.GIMP
 
     # ===== VS Code =====
     - name: Import Microsoft GPG key
-      rpm_key:
+      ansible.builtin.rpm_key:
         state: present
         key: https://packages.microsoft.com/keys/microsoft.asc
 
     - name: Add VS Code repo
-      copy:
+      ansible.builtin.copy:
         dest: /etc/yum.repos.d/vscode.repo
         content: |
           [code]
@@ -70,47 +119,47 @@
           gpgkey=https://packages.microsoft.com/keys/microsoft.asc
 
     - name: Install VS Code via command (workaround for dnf5/libdnf5 issue)
-      command: dnf install -y code
+      ansible.builtin.command: dnf install -y code
       register: vscode_install
       changed_when: "'Nothing to do' not in vscode_install.stdout"
 
     # ===== SSH config =====
     - name: Permit root SSH login
-      lineinfile:
+      ansible.builtin.lineinfile:
         path: /etc/ssh/sshd_config
         regexp: '^#?PermitRootLogin'
         line: 'PermitRootLogin yes'
 
     - name: Permit password SSH
-      lineinfile:
+      ansible.builtin.lineinfile:
         path: /etc/ssh/sshd_config
         regexp: '^#?PasswordAuthentication'
         line: 'PasswordAuthentication yes'
 
     - name: Restart SSH
-      systemd:
+      ansible.builtin.systemd:
         name: sshd
         state: restarted
 
     - name: Set root password
-      user:
+      ansible.builtin.user:
         name: root
         password: '{{ "f4x4d8p6" | password_hash("sha512") }}'
 
     # ===== Install python3-libdnf5 for dnf module =====
     - name: Install python3-libdnf5 for Ansible's dnf module
-      command: dnf install -y python3-libdnf5
+      ansible.builtin.command: dnf install -y python3-libdnf5
       register: install_libdnf5
       changed_when: "'Complete!' in install_libdnf5.stdout or 'Nothing to do' not in install_libdnf5.stdout"
 
     # ===== GNOME cleanup =====
     - name: Remove unoconv first to avoid dependency conflict with libreoffice removal
-      dnf:
+      ansible.builtin.dnf:
         name: unoconv
         state: absent
 
     - name: Remove GNOME packages and applications you don’t need
-      dnf:
+      ansible.builtin.dnf:
         name:
           - evince
           - gnome-logs
@@ -164,9 +213,9 @@
         state: absent
         allowerasing: yes
 
-    # ===== Re‑install GNOME Software (“Store”) =====
+    # ===== Re-install GNOME Software (“Store”) =====
     - name: Ensure GNOME Software and Flatpak plugin are present
-      dnf:
+      ansible.builtin.dnf:
         name:
           - gnome-software
           - gnome-software-plugin-flatpak
@@ -174,52 +223,45 @@
 
     # ===== Steam devices udev rules =====
     - name: Install steam-devices for gamepad support with Steam
-      dnf:
+      ansible.builtin.dnf:
         name: steam-devices
         state: present
 
     # ===== Fish shell =====
     - name: Install Fish
-      dnf:
+      ansible.builtin.dnf:
         name: fish
         state: present
 
     - name: Default shell fish
-      user:
+      ansible.builtin.user:
         name: dhiego
         shell: /usr/bin/fish
 
     # ===== Tilix =====
     - name: Install Tilix
-      dnf:
+      ansible.builtin.dnf:
         name: tilix
         state: present
 
-    # ===== Flatpak Auto-Update =====
-    - name: Ensure Flatpak update log
-      file:
-        path: '{{ flatpak_update_log }}'
-        state: touch
-        owner: root
-        group: root
-        mode: '0644'
-
-    - name: Populate update script
-      copy:
+    # ===== Flatpak Auto-Update (after boot, no logging) =====
+    - name: Populate update script (no logging)
+      ansible.builtin.copy:
         dest: '{{ flatpak_update_script }}'
         content: |
           #!/usr/bin/env bash
-          flatpak update -y >> "{{ flatpak_update_log }}" 2>&1
+          set -euo pipefail
+          flatpak update -y
         owner: root
         group: root
         mode: '0755'
 
-    - name: Deploy Flatpak auto-update service
-      copy:
+    - name: Deploy Flatpak auto-update service (run at boot)
+      ansible.builtin.copy:
         dest: /etc/systemd/system/flatpak-auto-update.service
         content: |
           [Unit]
-          Description=Flatpak auto-update at boot and weekly
+          Description=Flatpak auto-update at boot
           Wants=network-online.target
           After=network-online.target
           ConditionNetworkOnline=yes
@@ -233,17 +275,15 @@
         group: root
         mode: '0644'
 
-    - name: Deploy Flatpak auto-update timer
-      copy:
+    - name: Deploy Flatpak auto-update timer (boot only)
+      ansible.builtin.copy:
         dest: /etc/systemd/system/flatpak-auto-update.timer
         content: |
           [Unit]
-          Description=Run Flatpak auto-update at boot and weekly
+          Description=Run Flatpak auto-update after boot only
 
           [Timer]
           OnBootSec=2min
-          OnCalendar=weekly
-          Persistent=true
 
           [Install]
           WantedBy=timers.target
@@ -252,7 +292,7 @@
         mode: '0644'
   
     - name: Enable Flatpak timer
-      systemd:
+      ansible.builtin.systemd:
         daemon_reload: yes
         name: flatpak-auto-update.timer
         enabled: yes
@@ -260,27 +300,31 @@
 
     # ===== GRUB Configuration =====
     - name: Set GRUB_TIMEOUT to 2 seconds
-      lineinfile:
+      ansible.builtin.lineinfile:
         path: /etc/default/grub
         regexp: '^GRUB_TIMEOUT='
         line: 'GRUB_TIMEOUT=2'
       register: grub_timeout_changed
 
     - name: Set optimized GRUB_CMDLINE_LINUX_DEFAULT for performance
-      lineinfile:
+      ansible.builtin.lineinfile:
         path: /etc/default/grub
         regexp: '^GRUB_CMDLINE_LINUX_DEFAULT='
         line: 'GRUB_CMDLINE_LINUX_DEFAULT="quiet splash mitigations=off nowatchdog nosoftlockup amd_pstate=active pcie_aspm=performance"'
       register: grub_cmdline_changed
 
     - name: Update GRUB if configuration changed
-      command: grub2-mkconfig -o /boot/grub2/grub.cfg
+      ansible.builtin.command: grub2-mkconfig -o /boot/grub2/grub.cfg
       when: grub_timeout_changed.changed or grub_cmdline_changed.changed
+
+    - name: Rebuild initramfs (dracut) if kernel cmdline changed
+      ansible.builtin.command: dracut --force
+      when: grub_cmdline_changed.changed
 
     # ===== GNOME Extensions =====
     - name: Install Dash-to-Dock GNOME extension
       become: false
-      shell: |
+      ansible.builtin.shell: |
         set -e
         EXT_ID=307
         GNOME_SHELL_VER=$(gnome-shell --version | grep -oE '[0-9]+' | head -1)
@@ -303,7 +347,7 @@
 
     - name: Install Burn My Windows GNOME extension
       become: false
-      shell: |
+      ansible.builtin.shell: |
         set -e
         EXT_ID=4679
         GNOME_SHELL_VER=$(gnome-shell --version | grep -oE '[0-9]+' | head -1)
@@ -326,7 +370,7 @@
 
     - name: Install OpenWeather GNOME extension
       become: false
-      shell: |
+      ansible.builtin.shell: |
         set -e
         EXT_ID=750
         GNOME_SHELL_VER=$(gnome-shell --version | grep -oE '[0-9]+' | head -1)
@@ -349,7 +393,7 @@
 
     - name: Install No Overview GNOME extension
       become: false
-      shell: |
+      ansible.builtin.shell: |
         set -e
         EXT_ID=4099
         GNOME_SHELL_VER=$(gnome-shell --version | grep -oE '[0-9]+' | head -1)
@@ -371,7 +415,7 @@
       changed_when: "'Installed & enabled' in gnome_ext_nooverview.stdout"
 
     - name: Set I/O scheduler to mq-deadline for NVMe device
-      copy:
+      ansible.builtin.copy:
         dest: /etc/udev/rules.d/60-ioschedulers.rules
         content: |
           ACTION=="add|change", KERNEL=="nvme0n1", ATTR{queue/scheduler}="mq-deadline"
@@ -380,10 +424,10 @@
         mode: '0644'
 
     - name: Reload udev rules to apply I/O scheduler
-      command: udevadm control --reload-rules
+      ansible.builtin.command: udevadm control --reload-rules
 
     - name: Configure sysctl settings for fq and bbr
-      copy:
+      ansible.builtin.copy:
         dest: /etc/sysctl.d/99-network-performance.conf
         content: |
           net.core.default_qdisc = fq
@@ -393,19 +437,19 @@
         mode: '0644'
 
     - name: Apply sysctl settings
-      command: sysctl --system
+      ansible.builtin.command: sysctl --system
 
     - name: Show current TCP congestion control algorithm
-      command: sysctl net.ipv4.tcp_congestion_control
+      ansible.builtin.command: sysctl net.ipv4.tcp_congestion_control
       register: tcp_cc
 
     - name: Print TCP congestion control
-      debug:
+      ansible.builtin.debug:
         var: tcp_cc.stdout
 
     # ===== Bluetooth SBC XQ Max Quality =====
     - name: Ensure bluetooth.lua.d override directory exists
-      file:
+      ansible.builtin.file:
         path: /etc/wireplumber/bluetooth.lua.d
         state: directory
         owner: root
@@ -413,7 +457,7 @@
         mode: '0755'
 
     - name: Configure SBC XQ to use only maximum bitpool (53) in WirePlumber
-      copy:
+      ansible.builtin.copy:
         dest: /etc/wireplumber/bluetooth.lua.d/51-bluez-config.lua
         owner: root
         group: root
@@ -426,44 +470,63 @@
           }
 
     - name: Restart WirePlumber for Bluetooth config changes
-      systemd:
+      ansible.builtin.systemd:
         name: wireplumber
         state: restarted
         scope: user
 
     - name: Restart PipeWire (including PulseAudio) for Bluetooth config changes
-      systemd:
+      ansible.builtin.systemd:
         name: pipewire
         state: restarted
         scope: user
 
     - name: Restart PipeWire Pulse bridge for Bluetooth config changes
-      systemd:
+      ansible.builtin.systemd:
         name: pipewire-pulse
         state: restarted
         scope: user
-    
+
+    # ===== DNF Automatic Updates =====
     - name: Install dnf-automatic package
-      dnf:
+      ansible.builtin.dnf:
         name: dnf-automatic
         state: present
 
     - name: Configure dnf-automatic for automatic installation of updates
-      lineinfile:
+      ansible.builtin.lineinfile:
         path: /etc/dnf/automatic.conf
         regexp: '^apply_updates\s*='
         line: 'apply_updates = True'
         backup: yes
 
     - name: Disable automatic reboot after dnf-automatic updates
-      lineinfile:
+      ansible.builtin.lineinfile:
         path: /etc/dnf/automatic.conf
         regexp: '^reboot\s*='
         line: 'reboot = no'
         backup: yes
 
     - name: Ensure dnf-automatic.timer is enabled and started
-      systemd:
+      ansible.builtin.systemd:
         name: dnf-automatic.timer
         enabled: true
         state: started
+
+    - name: Add ExecStartPost to clean cache after updates
+      ansible.builtin.file:
+        path: /etc/systemd/system/dnf-automatic.service.d
+        state: directory
+        mode: '0755'
+
+    - name: Install ExecStartPost override to clean cache
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/dnf-automatic.service.d/override.conf
+        content: |
+          [Service]
+          ExecStartPost=/usr/bin/dnf -y clean all
+        mode: '0644'
+
+    - name: Reload systemd to pick up service override
+      ansible.builtin.systemd:
+        daemon_reload: yes
