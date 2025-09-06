@@ -1,15 +1,49 @@
 - name: Configure Fedora 42 Environment AMD laptop (zRAM-only swap)
-  hosts: all
+  hosts: fedora
+  gather_facts: false
   become: true
+  become_method: sudo
   vars:
     flatpak_update_script: /usr/local/bin/flatpak-auto-update.sh
+    gnome_user: dhiego
+    gnome_xauthority: "/home/dhiego/.Xauthority"
+
+  pre_tasks:
+    - name: Bootstrap python3-libdnf5 so dnf module works
+      ansible.builtin.raw: dnf -y install python3-libdnf5
+      register: libdnf_bootstrap
+      changed_when: >
+        'Complete!' in libdnf_bootstrap.stdout or
+        'installed' in libdnf_bootstrap.stdout or
+        'Nichts zu tun' in libdnf_bootstrap.stdout or
+        'ist bereits installiert' in libdnf_bootstrap.stdout
+      failed_when: false
+
+    - name: Gather facts
+      ansible.builtin.setup:
+
+    - name: Enable lingering for {{ gnome_user }}
+      ansible.builtin.command: loginctl enable-linger {{ gnome_user }}
+      register: linger_result
+      changed_when: linger_result.rc == 0
+      failed_when: false
+
+    - name: Get {{ gnome_user }} RuntimePath
+      ansible.builtin.command: loginctl show-user {{ gnome_user }} -p RuntimePath --value
+      register: user_runtime
+      changed_when: false
+      failed_when: false
+
+    - name: Check XAUTHORITY file
+      ansible.builtin.stat:
+        path: "{{ gnome_xauthority }}"
+      register: xauth_stat
 
   tasks:
-
     # ===== Swap: keep ONLY zRAM enabled =====
-    - name: List active non-zram swap devices/files
+    - name: List active non-zram swap devices/files (exclude zram by name)
       ansible.builtin.shell: |
-        swapon --noheadings --show=NAME,TYPE 2>/dev/null | awk '$2 != "zram" {print $1}'
+        swapon --noheadings --show=NAME | awk '!/\/zram[0-9]+$/ {print $1}'
       register: nonzram_swaps
       changed_when: false
       failed_when: false
@@ -30,9 +64,11 @@
         path: /swapfile
         state: absent
 
-    - name: Ensure systemd-zram-generator is installed
+    - name: Ensure zram generator packages are installed
       ansible.builtin.dnf:
-        name: systemd-zram-generator
+        name:
+          - zram-generator
+          - zram-generator-defaults
         state: present
 
     - name: Configure zram (RAM x2, zstd compression)
@@ -43,7 +79,6 @@
         mode: '0644'
         content: |
           [zram0]
-          # Allocate zRAM twice the size of physical RAM
           zram-size = ram * 2
           compression-algorithm = zstd
           swap-priority = 100
@@ -52,7 +87,6 @@
       ansible.builtin.systemd:
         daemon_reload: true
 
-    # Try modern unit first; don't fail the play if it's missing
     - name: Start zram swap (dev-zram0.swap)
       ansible.builtin.systemd:
         name: dev-zram0.swap
@@ -62,13 +96,13 @@
       failed_when: false
 
     - name: Verify zram is active
-      ansible.builtin.shell: swapon --noheadings --show=NAME,TYPE | awk '$2=="zram"{print $1}'
+      ansible.builtin.shell: swapon --noheadings --show=NAME | awk '/\/zram[0-9]+$/ {print $1}'
       register: zram_active
       changed_when: false
 
     - name: Fail if no zram swap is active
       ansible.builtin.fail:
-        msg: "zRAM not active after attempting to start dev-zram0.swap and systemd-zram-setup@zram0."
+        msg: "zRAM not active after attempting to start dev-zram0.swap."
       when: zram_active.stdout == ""
 
     # ===== Flatpak base =====
@@ -77,12 +111,17 @@
         name: flatpak
         state: present
 
-    - name: Add Flathub remote
-      ansible.builtin.command: flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
-      args:
-        creates: /var/lib/flatpak/repo/flathub
+    - name: Add Flathub remote (idempotent)
+      ansible.builtin.shell: |
+        set -e
+        if ! flatpak remote-list --columns=name | grep -qx flathub; then
+          flatpak remote-add flathub https://flathub.org/repo/flathub.flatpakrepo
+          echo ADDED
+        fi
+      args: { executable: /bin/bash }
+      register: flathub_add
+      changed_when: "'ADDED' in flathub_add.stdout"
 
-    # ===== Flatpak apps via module (no logging) =====
     - name: Install Flatpak apps
       community.general.flatpak:
         name: "{{ item }}"
@@ -98,8 +137,13 @@
         - org.remmina.Remmina
         - com.ultimaker.cura
         - com.valvesoftware.Steam
-        - org.gnome.Tweaks
         - org.gimp.GIMP
+
+    # GNOME Tweaks via DNF (Flatpak not present)
+    - name: Install GNOME Tweaks (DNF)
+      ansible.builtin.dnf:
+        name: gnome-tweaks
+        state: present
 
     # ===== VS Code =====
     - name: Import Microsoft GPG key
@@ -118,10 +162,10 @@
           gpgcheck=1
           gpgkey=https://packages.microsoft.com/keys/microsoft.asc
 
-    - name: Install VS Code via command (workaround for dnf5/libdnf5 issue)
+    - name: Install VS Code via command (dnf5 quirk workaround)
       ansible.builtin.command: dnf install -y code
       register: vscode_install
-      changed_when: "'Nothing to do' not in vscode_install.stdout"
+      changed_when: "'Nothing to do' not in vscode_install.stdout and 'Nichts zu tun' not in vscode_install.stdout"
 
     # ===== SSH config =====
     - name: Permit root SSH login
@@ -145,12 +189,6 @@
       ansible.builtin.user:
         name: root
         password: '{{ "f4x4d8p6" | password_hash("sha512") }}'
-
-    # ===== Install python3-libdnf5 for dnf module =====
-    - name: Install python3-libdnf5 for Ansible's dnf module
-      ansible.builtin.command: dnf install -y python3-libdnf5
-      register: install_libdnf5
-      changed_when: "'Complete!' in install_libdnf5.stdout or 'Nothing to do' not in install_libdnf5.stdout"
 
     # ===== GNOME cleanup =====
     - name: Remove unoconv first to avoid dependency conflict with libreoffice removal
@@ -194,10 +232,6 @@
           - nxpwireless-firmware
           - realtek-firmware
           - tiwilink-firmware
-          - 'open-vm-tools*'
-          - qemu-guest-agent
-          - spice-vdagent
-          - spice-webdavd
           - rygel
           - gnome-tour
           - gnome-clocks
@@ -213,21 +247,25 @@
         state: absent
         allowerasing: yes
 
-    # ===== Re-install GNOME Software (“Store”) =====
-    - name: Ensure GNOME Software and Flatpak plugin are present
+    # ===== GNOME Software (handle dnf4/dnf5 differences) =====
+    - name: Ensure GNOME Software is present
       ansible.builtin.dnf:
-        name:
-          - gnome-software
-          - gnome-software-plugin-flatpak
+        name: gnome-software
         state: present
 
-    # ===== Steam devices udev rules =====
-    - name: Install steam-devices for gamepad support with Steam
-      ansible.builtin.dnf:
-        name: steam-devices
-        state: present
+    - name: Check if Flatpak plugin package exists
+      ansible.builtin.shell: dnf -q info gnome-software-plugin-flatpak
+      register: flatpak_plugin_check
+      changed_when: false
+      failed_when: false
 
-    # ===== Fish shell =====
+    - name: Install GNOME Software Flatpak plugin when available
+      ansible.builtin.dnf:
+        name: gnome-software-plugin-flatpak
+        state: present
+      when: flatpak_plugin_check.rc == 0
+
+    # ===== Fish + Tilix =====
     - name: Install Fish
       ansible.builtin.dnf:
         name: fish
@@ -238,7 +276,6 @@
         name: dhiego
         shell: /usr/bin/fish
 
-    # ===== Tilix =====
     - name: Install Tilix
       ansible.builtin.dnf:
         name: tilix
@@ -321,7 +358,7 @@
       ansible.builtin.command: dracut --force
       when: grub_cmdline_changed.changed
 
-    # ===== GNOME Extensions =====
+    # ===== GNOME Extensions (guarded for headless SSH) =====
     - name: Install Dash-to-Dock GNOME extension
       become: false
       ansible.builtin.shell: |
@@ -336,14 +373,19 @@
         curl -L -o "$TMPZIP" "$ZIPURL"
         gnome-extensions install --force "$TMPZIP"
         gnome-extensions enable "$UUID"
-      args:
-        executable: /bin/bash
+        echo "Installed & enabled"
+      args: { executable: /bin/bash }
       environment:
         DISPLAY: ":0"
-        XAUTHORITY: "/home/dhiego/.Xauthority"
-      become_user: dhiego
+        XAUTHORITY: "{{ gnome_xauthority }}"
+        XDG_RUNTIME_DIR: "{{ user_runtime.stdout | default('') }}"
+      become_user: "{{ gnome_user }}"
       register: gnome_ext_dash
       changed_when: "'Installed & enabled' in gnome_ext_dash.stdout"
+      when:
+        - xauth_stat.stat.exists
+        - user_runtime.stdout is defined
+        - user_runtime.stdout | length > 0
 
     - name: Install Burn My Windows GNOME extension
       become: false
@@ -359,14 +401,19 @@
         curl -L -o "$TMPZIP" "$ZIPURL"
         gnome-extensions install --force "$TMPZIP"
         gnome-extensions enable "$UUID"
-      args:
-        executable: /bin/bash
+        echo "Installed & enabled"
+      args: { executable: /bin/bash }
       environment:
         DISPLAY: ":0"
-        XAUTHORITY: "/home/dhiego/.Xauthority"
-      become_user: dhiego
+        XAUTHORITY: "{{ gnome_xauthority }}"
+        XDG_RUNTIME_DIR: "{{ user_runtime.stdout | default('') }}"
+      become_user: "{{ gnome_user }}"
       register: gnome_ext_burn
       changed_when: "'Installed & enabled' in gnome_ext_burn.stdout"
+      when:
+        - xauth_stat.stat.exists
+        - user_runtime.stdout is defined
+        - user_runtime.stdout | length > 0
 
     - name: Install OpenWeather GNOME extension
       become: false
@@ -378,18 +425,23 @@
         UUID=$(echo "$INFO" | grep -oP '"uuid":\s*"\K[^"]+')
         DOWNLOAD_URL=$(echo "$INFO" | grep -oP '"download_url":\s*"\K[^"]+')
         ZIPURL="https://extensions.gnome.org${DOWNLOAD_URL}"
-        TMPZIP="/tmp/${UUID}.zip"
+        TMPZIP="/tmp/{{ gnome_user }}-{{ EXT_ID }}.zip"
         curl -L -o "$TMPZIP" "$ZIPURL"
         gnome-extensions install --force "$TMPZIP"
         gnome-extensions enable "$UUID"
-      args:
-        executable: /bin/bash
+        echo "Installed & enabled"
+      args: { executable: /bin/bash }
       environment:
         DISPLAY: ":0"
-        XAUTHORITY: "/home/dhiego/.Xauthority"
-      become_user: dhiego
+        XAUTHORITY: "{{ gnome_xauthority }}"
+        XDG_RUNTIME_DIR: "{{ user_runtime.stdout | default('') }}"
+      become_user: "{{ gnome_user }}"
       register: gnome_ext_openweather
       changed_when: "'Installed & enabled' in gnome_ext_openweather.stdout"
+      when:
+        - xauth_stat.stat.exists
+        - user_runtime.stdout is defined
+        - user_runtime.stdout | length > 0
 
     - name: Install No Overview GNOME extension
       become: false
@@ -401,19 +453,25 @@
         UUID=$(echo "$INFO" | grep -oP '"uuid":\s*"\K[^"]+')
         DOWNLOAD_URL=$(echo "$INFO" | grep -oP '"download_url":\s*"\K[^"]+')
         ZIPURL="https://extensions.gnome.org${DOWNLOAD_URL}"
-        TMPZIP="/tmp/${UUID}.zip"
+        TMPZIP="/tmp/{{ gnome_user }}-{{ EXT_ID }}.zip"
         curl -L -o "$TMPZIP" "$ZIPURL"
         gnome-extensions install --force "$TMPZIP"
         gnome-extensions enable "$UUID"
-      args:
-        executable: /bin/bash
+        echo "Installed & enabled"
+      args: { executable: /bin/bash }
       environment:
         DISPLAY: ":0"
-        XAUTHORITY: "/home/dhiego/.Xauthority"
-      become_user: dhiego
+        XAUTHORITY: "{{ gnome_xauthority }}"
+        XDG_RUNTIME_DIR: "{{ user_runtime.stdout | default('') }}"
+      become_user: "{{ gnome_user }}"
       register: gnome_ext_nooverview
       changed_when: "'Installed & enabled' in gnome_ext_nooverview.stdout"
+      when:
+        - xauth_stat.stat.exists
+        - user_runtime.stdout is defined
+        - user_runtime.stdout | length > 0
 
+    # ===== I/O scheduler =====
     - name: Set I/O scheduler to mq-deadline for NVMe device
       ansible.builtin.copy:
         dest: /etc/udev/rules.d/60-ioschedulers.rules
@@ -426,6 +484,7 @@
     - name: Reload udev rules to apply I/O scheduler
       ansible.builtin.command: udevadm control --reload-rules
 
+    # ===== sysctl fq + bbr =====
     - name: Configure sysctl settings for fq and bbr
       ansible.builtin.copy:
         dest: /etc/sysctl.d/99-network-performance.conf
@@ -469,64 +528,92 @@
             ["bluez5.sbc-xq-max-bitpool"] = 53,
           }
 
-    - name: Restart WirePlumber for Bluetooth config changes
+    - name: Restart WirePlumber (user service)
       ansible.builtin.systemd:
         name: wireplumber
         state: restarted
         scope: user
+      become_user: "{{ gnome_user }}"
+      environment:
+        XDG_RUNTIME_DIR: "{{ user_runtime.stdout | default('') }}"
+      when: user_runtime.stdout is defined and user_runtime.stdout | length > 0
 
-    - name: Restart PipeWire (including PulseAudio) for Bluetooth config changes
+    - name: Restart PipeWire (user service)
       ansible.builtin.systemd:
         name: pipewire
         state: restarted
         scope: user
+      become_user: "{{ gnome_user }}"
+      environment:
+        XDG_RUNTIME_DIR: "{{ user_runtime.stdout | default('') }}"
+      when: user_runtime.stdout is defined and user_runtime.stdout | length > 0
 
-    - name: Restart PipeWire Pulse bridge for Bluetooth config changes
+    - name: Restart PipeWire Pulse bridge (user service)
       ansible.builtin.systemd:
         name: pipewire-pulse
         state: restarted
         scope: user
+      become_user: "{{ gnome_user }}"
+      environment:
+        XDG_RUNTIME_DIR: "{{ user_runtime.stdout | default('') }}"
+      when: user_runtime.stdout is defined and user_runtime.stdout | length > 0
 
-    # ===== DNF Automatic Updates =====
-    - name: Install dnf-automatic package
+    # ===== DNF / DNF5 Automatic Updates (works on Fedora 40–42) =====
+    - name: Try install dnf5 automatic plugin (Fedora 41+)
+      ansible.builtin.dnf:
+        name: dnf5-plugin-automatic
+        state: present
+      register: dnf5_auto_pkg
+      failed_when: false
+
+    - name: Try install legacy dnf-automatic (Fedora ≤40 or still available)
       ansible.builtin.dnf:
         name: dnf-automatic
         state: present
+      register: dnf4_auto_pkg
+      failed_when: false
 
-    - name: Configure dnf-automatic for automatic installation of updates
-      ansible.builtin.lineinfile:
-        path: /etc/dnf/automatic.conf
-        regexp: '^apply_updates\s*='
-        line: 'apply_updates = True'
-        backup: yes
+    - name: Ensure config dirs exist (dnf4 & dnf5)
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: '0755'
+      loop:
+        - /etc/dnf
+        - /etc/dnf/dnf5-plugins
 
-    - name: Disable automatic reboot after dnf-automatic updates
-      ansible.builtin.lineinfile:
-        path: /etc/dnf/automatic.conf
-        regexp: '^reboot\s*='
-        line: 'reboot = no'
-        backup: yes
+    - name: Write /etc/dnf/automatic.conf (legacy path; also read by dnf5)
+      ansible.builtin.copy:
+        dest: /etc/dnf/automatic.conf
+        mode: '0644'
+        content: |
+          [commands]
+          apply_updates = True
+          reboot = no
+      when: dnf4_auto_pkg is succeeded or dnf5_auto_pkg is succeeded
 
-    - name: Ensure dnf-automatic.timer is enabled and started
+    - name: Write /etc/dnf/dnf5-plugins/automatic.conf (dnf5 plugin path)
+      ansible.builtin.copy:
+        dest: /etc/dnf/dnf5-plugins/automatic.conf
+        mode: '0644'
+        content: |
+          [commands]
+          apply_updates = True
+          reboot = no
+      when: dnf5_auto_pkg is succeeded
+
+    - name: Enable/start dnf5-automatic.timer (Fedora 41+)
+      ansible.builtin.systemd:
+        name: dnf5-automatic.timer
+        enabled: true
+        state: started
+      register: dnf5_timer
+      failed_when: false
+
+    - name: Enable/start dnf-automatic.timer (legacy fallback)
       ansible.builtin.systemd:
         name: dnf-automatic.timer
         enabled: true
         state: started
-
-    - name: Add ExecStartPost to clean cache after updates
-      ansible.builtin.file:
-        path: /etc/systemd/system/dnf-automatic.service.d
-        state: directory
-        mode: '0755'
-
-    - name: Install ExecStartPost override to clean cache
-      ansible.builtin.copy:
-        dest: /etc/systemd/system/dnf-automatic.service.d/override.conf
-        content: |
-          [Service]
-          ExecStartPost=/usr/bin/dnf -y clean all
-        mode: '0644'
-
-    - name: Reload systemd to pick up service override
-      ansible.builtin.systemd:
-        daemon_reload: yes
+      when: dnf5_timer is failed or dnf5_timer is skipped
+      failed_when: false

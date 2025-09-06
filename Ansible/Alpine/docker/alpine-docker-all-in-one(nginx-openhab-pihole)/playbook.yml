@@ -1,79 +1,104 @@
 ---
-- name: Setup Alpine Linux for Docker, Docker Compose, and Automated Upgrades
+- name: Setup Alpine Linux for Docker, Compose v2, and automated upgrades
   hosts: alpine
   become: true
+  gather_facts: false
+
+  collections:
+    - community.docker
+
+  vars:
+    tz: "Europe/Berlin"
+    pihole_hostname: "piholedhiego"
+    pihole_virtual_host: "piholedhiego.duckdns.org"
+    pihole_api_password: "f4x4d8p6"  # Plain text here
+    openhab_uid: 9001
+    openhab_gid: 9001
+    docker_project_dir: "/opt/compose"
+    docker_env_file: "/opt/compose/.env"
+    docker_users: []  # e.g. ["dhiego"]
+
+  pre_tasks:
+    - name: Ensure repositories track latest-stable (main/community)
+      ansible.builtin.replace:
+        path: /etc/apk/repositories
+        regexp: '^https://dl-cdn\.alpinelinux\.org/alpine/v[0-9.]+/(main|community)$'
+        replace: 'https://dl-cdn.alpinelinux.org/alpine/latest-stable/\1'
+      register: repo_replaced
+      notify: apk update
+
+    - name: Ensure /etc/timezone is set
+      ansible.builtin.copy:
+        dest: /etc/timezone
+        content: "{{ tz }}\n"
+        owner: root
+        group: root
+        mode: '0644'
+      notify: reconfigure timezone
 
   tasks:
-    - name: Update repository to use the latest stable Alpine packages
-      ansible.builtin.lineinfile:
-        path: /etc/apk/repositories
-        regexp: '^https://dl-cdn.alpinelinux.org/alpine/v[0-9\.]+/main$'
-        line: 'https://dl-cdn.alpinelinux.org/alpine/latest-stable/main'
-        state: present
-      register: main_repo
-
-    - name: Update community repository to use the latest stable Alpine packages
-      ansible.builtin.lineinfile:
-        path: /etc/apk/repositories
-        regexp: '^https://dl-cdn.alpinelinux.org/alpine/v[0-9\.]+/community$'
-        line: 'https://dl-cdn.alpinelinux.org/alpine/latest-stable/community'
-        state: present
-      register: community_repo
-
-    - name: Run apk update if repositories were modified
-      ansible.builtin.command: apk update
-      when: main_repo.changed or community_repo.changed
-
-    - name: Install Docker and Docker Compose
+    - name: Install Docker engine, Compose v2 plugin, and helpful packages
       ansible.builtin.apk:
+        update_cache: yes
         name:
           - docker
-          - docker-compose
-        update_cache: yes
+          - docker-compose-plugin
+          - ca-certificates
+          - tzdata
         state: latest
 
-    - name: Enable Docker service to start on boot
+    - name: Enable and start Docker service
       ansible.builtin.service:
         name: docker
         enabled: true
-
-    - name: Start Docker service
-      ansible.builtin.service:
-        name: docker
         state: started
 
-    - name: Create a script to auto-upgrade and reboot if needed
+    - name: Add users to docker group (optional)
+      ansible.builtin.user:
+        name: "{{ item }}"
+        groups: docker
+        append: true
+      loop: "{{ docker_users }}"
+      when: docker_users | length > 0
+
+    - name: Create project and data directories
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: directory
+        owner: "{{ item.owner | default('root') }}"
+        group: "{{ item.group | default('root') }}"
+        mode: "{{ item.mode | default('0755') }}"
+      loop:
+        - { path: "{{ docker_project_dir }}" }
+        - { path: "/opt/piHole/etc-pihole" }
+        - { path: "/opt/piHole/etc-dnsmasq.d" }
+        - { path: "/opt/openhab/addons", owner: "{{ openhab_uid }}", group: "{{ openhab_gid }}" }
+        - { path: "/opt/openhab/conf", owner: "{{ openhab_uid }}", group: "{{ openhab_gid }}" }
+        - { path: "/opt/openhab/userdata", owner: "{{ openhab_uid }}", group: "{{ openhab_gid }}" }
+        - { path: "/opt/mosquitto/config" }
+        - { path: "/opt/mosquitto/data" }
+        - { path: "/opt/mosquitto/log" }
+
+    - name: Deploy Docker Compose environment file
       ansible.builtin.copy:
-        dest: /usr/local/bin/auto_upgrade.sh
-        mode: '0755'
+        dest: "{{ docker_env_file }}"
+        owner: root
+        group: root
+        mode: '0644'
         content: |
-          #!/bin/sh
-          # Update the package index
-          apk update
-          # Perform the upgrade
-          if apk upgrade --available | grep -q "Upgraded"; then
-            # If packages were upgraded, reboot
-            echo "System upgraded, rebooting..."
-            reboot
-          else
-            echo "No upgrades performed."
-          fi
+          TZ={{ tz }}
+          VIRTUAL_HOST={{ pihole_virtual_host }}
+          PROXY_LOCATION={{ pihole_virtual_host }}
+          PIHOLE_DNS_1=1.1.1.1
+          PIHOLE_DNS_2=8.8.8.8
+          FTLCONF_webserver_api_password={{ pihole_api_password }}
 
-    - name: Schedule weekly cron job for auto-upgrade script
-      ansible.builtin.cron:
-        name: "Weekly auto-upgrade for Alpine Linux"
-        job: "/usr/local/bin/auto_upgrade.sh"
-        weekday: "0"  # Sunday
-        hour: "3"     # 3:00 AM
-        user: root
-        state: present
-
-    - name: Create Docker Compose file
+    - name: Deploy Docker Compose file
       ansible.builtin.copy:
-        dest: /opt/docker-compose.yml
+        dest: "{{ docker_project_dir }}/docker-compose.yml"
+        mode: '0644'
         content: |
           services:
-
             watchtower:
               image: containrrr/watchtower:latest
               restart: unless-stopped
@@ -85,75 +110,110 @@
               volumes:
                 - /var/run/docker.sock:/var/run/docker.sock
                 - /etc/timezone:/etc/timezone:ro
-              ports:
-                - "5555:8080"
+                - /etc/localtime:/etc/localtime:ro
 
             pihole:
               container_name: pihole
               image: pihole/pihole:latest
-              hostname: piholedhiego
+              hostname: {{ pihole_hostname }}
+              env_file:
+                - .env
               environment:
-                - TZ=Europe/Berlin
-                - VIRTUAL_HOST=piholedhiego.duckdns.org
-                - PROXY_LOCATION=piholedhiego.duckdns.org
-                - VIRTUAL_PORT=80
-                - PIHOLE_DNS_1=1.1.1.1  # Use primary DNS
-                - PIHOLE_DNS_2=8.8.8.8  # Use secondary DNS
-                - FTLCONF_webserver_api_password=f4x4d8p6
-                - DNSMASQ_LISTENING=all  # Ensure it listens to all interfaces
+                - DNSMASQ_LISTENING=all
               volumes:
-                - /opt/ceph/piHole/etc-pihole:/etc/pihole
-                - /opt/ceph/piHole/etc-dnsmasq.d:/etc/dnsmasq.d
+                - /opt/piHole/etc-pihole:/etc/pihole
+                - /opt/piHole/etc-dnsmasq.d:/etc/dnsmasq.d
               network_mode: 'host'
               restart: unless-stopped
               dns:
                 - 127.0.0.1
-                - 1.1.1.1  # Or another DNS server of your choice
+                - 1.1.1.1
               cap_add:
-                - NET_ADMIN  # Required to configure networking
+                - NET_ADMIN
 
             openhab:
-              image: "openhab/openhab:latest-alpine"
+              image: openhab/openhab:latest-alpine
               container_name: openhab
               restart: unless-stopped
               ports:
-                - "8080:8080"      # OpenHAB main UI port
-                - "8443:8443"      # OpenHAB HTTPS port
-                - "5007:5007"      # OpenHAB remote console port
+                - "8080:8080"
+                - "8443:8443"
+                - "5007:5007"
               environment:
-                TZ: "Europe/Berlin"  # Replace with your timezone
+                TZ: "{{ tz }}"
                 OPENHAB_HTTP_PORT: "8080"
                 OPENHAB_HTTPS_PORT: "8443"
-                USER_ID: "9001"    # Adjust user ID if necessary
-                GROUP_ID: "9001"   # Adjust group ID if necessary
+                USER_ID: "{{ openhab_uid }}"
+                GROUP_ID: "{{ openhab_gid }}"
                 CRYPTO_POLICY: "unlimited"
               volumes:
-                - "/opt/ceph/openhab/addons:/openhab/addons"     # Mount for additional bindings and addons
-                - "/opt/ceph/openhab/conf:/openhab/conf"         # Configuration files (e.g., rules, items, sitemap)
-                - "/opt/ceph/openhab/userdata:/openhab/userdata" # Persistent data
+                - "/opt/openhab/addons:/openhab/addons"
+                - "/opt/openhab/conf:/openhab/conf"
+                - "/opt/openhab/userdata:/openhab/userdata"
               depends_on:
                 - mosquitto
 
             mosquitto:
-              image: "eclipse-mosquitto:latest"
+              image: eclipse-mosquitto:latest
               container_name: mosquitto
               restart: unless-stopped
               ports:
-                - "1883:1883"      # MQTT port for clients
-                - "9001:9001"      # WebSocket port for MQTT over WebSocket (optional)
+                - "1883:1883"
+                - "9001:9001"
               volumes:
-                - "/opt/ceph/mosquitto/config:/mosquitto/config"   # Config files for Mosquitto
-                - "/opt/ceph/mosquitto/data:/mosquitto/data"       # Persistence data for Mosquitto
-                - "/opt/ceph/mosquitto/log:/mosquitto/log"         # Log files for Mosquitto
+                - "/opt/mosquitto/config:/mosquitto/config"
+                - "/opt/mosquitto/data:/mosquitto/data"
+                - "/opt/mosquitto/log:/mosquitto/log"
 
-    - name: Start Docker Compose
+      register: compose_file
+
+    - name: Validate Compose file
       ansible.builtin.command:
-        cmd: "docker-compose -f /opt/docker-compose.yml up -d"
-        chdir: /opt
+        cmd: "docker compose -f {{ docker_project_dir }}/docker-compose.yml config"
+      changed_when: false
 
+    - name: Apply Docker Compose
+      community.docker.docker_compose_v2:
+        project_src: "{{ docker_project_dir }}"
+        state: present
+        pull: always
+      register: compose_apply
 
-    - name: Ensure Docker Compose is restarted if Compose file changes
-      ansible.builtin.command:
-        cmd: "docker-compose -f /opt/docker-compose.yml restart"
-        chdir: /opt
-      when: "docker_compose_file_changed is defined and docker_compose_file_changed"
+    - name: Install weekly auto-upgrade script
+      ansible.builtin.copy:
+        dest: /etc/periodic/weekly/auto-upgrade
+        mode: '0755'
+        content: |
+          #!/bin/sh
+          set -eu
+          apk update >/dev/null
+          UPGRADES="$(apk list -u 2>/dev/null | grep -v 'installed$' || true)"
+          if [ -n "$UPGRADES" ]; then
+            echo "Upgrades available:"
+            echo "$UPGRADES"
+            apk upgrade -a
+            if echo "$UPGRADES" | grep -Eiq '(^| )musl|(^| )linux-|(^| )grub'; then
+              echo "Critical components updated; rebooting..."
+              /sbin/reboot
+            else
+              echo "Upgraded packages; no reboot required."
+            fi
+          else
+            echo "No upgrades available."
+          fi
+
+    - name: Ensure periodic weekly is enabled
+      ansible.builtin.service:
+        name: crond
+        enabled: true
+        state: started
+
+  handlers:
+    - name: apk update
+      ansible.builtin.command: apk update
+      listen: apk update
+
+    - name: reconfigure timezone
+      ansible.builtin.command: setup-timezone -z "{{ tz }}"
+      listen: reconfigure timezone
+      changed_when: false
