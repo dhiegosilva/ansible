@@ -1,0 +1,16 @@
+on target
+
+sudo systemctl enable --now ssh
+
+
+#/etc/ssh/sshd_config
+usepam yes
+permitrootlogin yes
+pubkeyauthentication yes
+passwordauthentication yes
+
+#restart
+sudo systemctl restart sshd
+
+#change root password
+sudo passwd root

@@ -72,4 +72,8 @@ com.miui.notes \
 com.xiaomi.calendar \
 com.miui.huanji \
 com.microsoft.appmanager \
+com.google.android.projection.gearhead \
+com.google.android.apps.safetyhub \
+com.miui.migameservice \
+com.xiaomi.glgm \
 | xargs -n1 -I{} adb shell pm uninstall --user 0 {}
